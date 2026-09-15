@@ -19,17 +19,25 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
    - 有测试框架后：运行完整测试套件（不只是新写的用例）。
    - 同时运行 lint / 类型检查 / 构建（按项目实际脚本）。
    - 新增功能或修复 bug 时，**必须补充对应测试**。
-3. **提交**：`git add` + `git commit`，一个逻辑变更一个 commit。
-4. **汇报**：向用户说明「改了什么 / 测试结果 / commit 号」。
+3. **更新文档**：本轮改动影响到的文档必须同步修改，不允许留成“下次再说”。
+   - `README.md`：使用方式、命令、目录结构
+   - `docs/MVP.md`：范围、已经做了什么、计划偏离
+   - `AGENTS.md`：流程、测试命令、约束
+   - `docs/DICTIONARY.md`：词库相关
+   - 发现与计划不符（如某方案实测不可行），**必须写下来**，而不是默默不做。
+4. **提交并推送**：`git add` + `git commit` + `git push`。一个逻辑变更一个 commit。
+5. **汇报**：向用户说明「改了什么 / 测试结果 / 文档 / commit 号」。
 
 **测试未通过不得提交，也不得汇报为完成。** 若某项检查无法运行（如环境缺失），必须明确说明原因，而不是静默略过。
 
 ## Git 约定
 
 - 主分支：`main`；远程：`origin` → https://github.com/pikaka007/InkPick.git
+- **每完成一个 commit 都要 `git push` 到 `origin/main`**，不要留在本地。
 - 未经用户明确要求，**不要** `git push --force`、`git reset --hard`、改写已推送历史。
-- 用户要求「提交」默认指本地 commit；**推送前先确认**（除非用户已说明要推送到远程）。
 - 提交前检查 `git status`，确认没有误提交敏感信息（密钥、`.env`、本地配置）。
+- 大体积的第三方数据（如 ECDICT 全量 CSV）不入库：放 `.dict-src/`（已在 .gitignore），
+  只提交裁好的产物到 `resources/dictionary/`。
 
 ### Commit message
 
@@ -54,6 +62,7 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 | 端到端 | `npm run test:e2e`（Playwright 驱动真实 Electron，会先 `build`） |
 | 类型检查 | `npm run typecheck` |
 | 构建 | `npm run build` |
+| 重建词库 | `npm run dict:build`（需 `.dict-src/` 源数据，见 docs/DICTIONARY.md） |
 | Lint | **尚未接入** —— 补上之前不要假装跑过 |
 
 改动后的最低要求：
@@ -61,7 +70,7 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 - 任何改动：`npm test && npm run typecheck`
 - 动了界面 / 主进程 / 持久化：还要跑 `npm run test:e2e`
 - 改了 `src/core/anchor.ts`、`src/renderer/src/selection.ts`、`src/main/storeFile.ts`、
-  或关窗落盘握手：**必须**跑 `npm run test:e2e`
+  关窗落盘握手、或 `resources/dictionary/` 里的词库文件：**必须**跑 `npm run test:e2e`
 
 ### 测试要能失败
 
@@ -73,10 +82,16 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 
 ```
 src/core/       纯 TS，无框架无 DOM 依赖 —— 业务逻辑全在这里
-src/main/       Electron 主进程：窗口、IPC、文件读写（含关窗落盘握手）
+  anchor.ts     定位 / 重定位
+  dictionary.ts 词典解析、查词、词形还原
+  vocab.ts      单词本分组（按 lemma 合并）
+  csv.ts        ECDICT 的 CSV 解析（容错）
+src/main/       Electron 主进程：窗口、IPC、文件读写、词典
 src/preload/    contextBridge 最小 API
 src/renderer/   React 界面；selection.ts 是 DOM 选区 ⇄ 全文偏移量的映射
-tests/          Vitest 单测；tests/e2e 是真实 Electron 的验收测试
+resources/dictionary/  内置 mini 词库（已提交，1.7MB）
+scripts/        dict:build 词库构建脚本
+.dict-src/      ECDICT 源数据，不入库
 ```
 
 ## 代码约定
@@ -93,7 +108,8 @@ tests/          Vitest 单测；tests/e2e 是真实 Electron 的验收测试
 ```
 改动：<要点>
 测试：<命令> → <结果>
-提交：<commit 短哈希> <message>
+文档：<本次同步了哪些文档>
+提交：<commit 短哈希> <message>（已推送）
 遗留：<未完成项 / 风险，可写「无」>
 ```
 

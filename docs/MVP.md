@@ -64,11 +64,17 @@ Note  = Annotation + { content }
 
 ## 落地顺序
 
-1. 上述 4 件事闭环（TXT）
-2. 词典释义自动填充 + 词形还原（lemma，避免 running/ran/runs 变三个词条）
+1. ✅ 上述 4 件事闭环（TXT）
+2. ✅ 词典释义自动填充 + 词形还原（lemma，避免 running/ran/runs 变三个词条）
 3. 导出 Anki CSV / Markdown
-4. EPUB（换渲染引擎，标注逻辑复用，只换 anchor 实现）
+4. EPUB（换渲染引擎，标注复用，只换 anchor 实现）
 5. 复习算法 / 同步 / PDF
+
+### 单词本分组（已做）
+
+同一词的不同形态在**列表层**按 lemma 合并成一组，**底层标注不合并**
+（每条绑定一个原文位置，不能丢失）。分组规则与取舍见
+[`DICTIONARY.md`](DICTIONARY.md#一条明确的取舍)。
 
 ## 技术选型
 
@@ -124,11 +130,18 @@ shell/         Electron 壳：渲染、文件访问、IPC
 
 - **存储用 JSON 而非 better-sqlite3**：理由见上表。换 SQLite 时只需改 `src/main/storeFile.ts`
   与 `src/core/store.ts`，上层不动。
+- **不做「完整词典下载」**（原计划的一部分）：实测全量 ECDICT 解析耗时 3.2s、
+  堆内存 **1.46GB**，而且词形还原反而从 23,059 条跌到 272 条（几乎失效）——
+  因为全量库里几乎每个变形词都是独立词条。花 1.4GB 买到的正好是我们最需要的那件事的反面。
+  提升覆盖率的正确做法是调 `FREQ_LIMIT` 后重新 `npm run dict:build`。
+  数据见 [`DICTIONARY.md`](DICTIONARY.md#为什么不做完整词典下载)。
 - **未接入 Lint**：待补。
 - **未配置 CSP**：正文全程用 React 文本节点渲染（无 `dangerouslySetInnerHTML`），
   且不加载远程内容，风险可控；打包前补上。
 - **TXT 分段即分段**：硬换行的 TXT（如 Gutenberg）会把每行当一个段落。
   代价是行距偏大，好处是偏移量映射简单可靠。后续按标点合并行可改善。
+- **词性拆分依赖 ECDICT 的 `translation` 文本格式**：形如 `n. 奔跑`。
+  格式变了就会退化成“整段当成一条义项”，不会报错，但显示会变粗糙。
 
 ### 待定
 

@@ -4,18 +4,20 @@
 
 集 **阅读器**、**单词本**、**笔记** 于一体，**数据全部存在本地**。
 
-## 当前状态：MVP 闭环已跑通
+## 当前状态：MVP 闭环 + 词典已跑通
 
-四个功能：
+六个功能：
 
 | | 说明 |
 |---|---|
 | **读** | 打开 TXT / Markdown，滚动阅读，关掉再打开还在原位置 |
 | **钉** | 选中一段文字 → 收藏为**单词** 或 **笔记**（自动记下所在的那句话） |
-| **看** | 左侧列表查看全部标注，点一下跳回原文那句 |
+| **析** | 收藏时自动查词典：音标 + 中文释义 + 词形还原（`words` → `word`） |
+| **看** | 左侧按**原形分组**的单词本 + 笔记列表，点一下跳回原文那句 |
+| **补** | 词典没收录的词可以手写一句释义 |
 | **存** | 本地 JSON 持久化，重启不丢 |
 
-范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)。
+范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)，词库细节见 [`docs/DICTIONARY.md`](docs/DICTIONARY.md)。
 
 ## 快速开始
 
@@ -33,8 +35,8 @@ npm 11 会为此打一条 `Unknown project config` 警告，可忽略。
 ## 常用命令
 
 ```bash
-npm test             # 单元测试（Vitest）
-npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，会先构建）
+npm test             # 单元测试（Vitest，120 个）
+npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，11 个，会先构建）
 npm run typecheck    # 类型检查
 npm run build        # 构建到 out/
 npm start            # 预览构建产物
@@ -45,20 +47,30 @@ npm start            # 预览构建产物
 ```
 src/core/            纯 TypeScript，无框架、无 DOM 依赖 —— 业务逻辑都在这里
   anchor.ts          定位 / 重定位（最值钱的一段代码）
+  dictionary.ts      词典解析、查词、词形还原
+  vocab.ts           单词本分组（按 lemma 合并同一词的不同形态）
+  csv.ts             ECDICT 的 CSV 解析（容错脏引号）
   text.ts            文本归一化、分段、取上下文句子
   store.ts           状态操作与序列化（纯函数）
   types.ts           领域模型：Annotation 统一承载单词与笔记
-src/main/            Electron 主进程：窗口、IPC、文件读写
-src/preload/         contextBridge 暴露的最小 API（仅 5 个方法）
+src/main/            Electron 主进程：窗口、IPC、文件读写、词典
+src/preload/         contextBridge 暴露的最小 API
 src/renderer/        React 界面
   src/selection.ts   DOM 选区 ⇄ 全文偏移量映射（标注功能的地基）
+resources/dictionary/  内置 mini 词库（23,900 词条，已提交）
 tests/               Vitest 单测；tests/e2e 是真实 Electron 的验收测试
 ```
 
-两条不能破的约定：
+三条不能破的约定：
 
 1. **业务逻辑必须放 `core/`**，保持纯函数、可单测；`shell`（main/preload/renderer）只负责渲染、文件访问与 IPC。
 2. **标注必须带上下文和位置**。没有「原句」的单词本是废的，没有「位置」的笔记回不到原文。
+3. **先钉住、再查词**。词典出任何问题都不能让「收藏」这个动作失败。
+
+## 词库
+
+内置 [ECDICT](https://github.com/skywind3000/ECDICT)（MIT）裁出的 23,900 个常用词，
+加载耗时 79ms / 内存 29MB。重建与筛选策略见 [`docs/DICTIONARY.md`](docs/DICTIONARY.md)。
 
 ## 数据在哪
 
