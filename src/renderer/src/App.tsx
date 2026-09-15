@@ -6,7 +6,7 @@ import Reader from '@renderer/components/Reader'
 import type { JumpTarget } from '@renderer/components/Reader'
 import Sidebar from '@renderer/components/Sidebar'
 import { flushSave, useAppStore } from '@renderer/state'
-import type { OffsetRange } from '@renderer/selection'
+import type { OffsetRange } from '@renderer/state'
 
 export default function App(): JSX.Element {
   const ready = useAppStore((state) => state.ready)
@@ -19,6 +19,7 @@ export default function App(): JSX.Element {
   const addVocab = useAppStore((state) => state.addVocab)
   const addNote = useAppStore((state) => state.addNote)
   const removeAnnotationById = useAppStore((state) => state.removeAnnotationById)
+  const setManualDefinition = useAppStore((state) => state.setManualDefinition)
   const saveProgress = useAppStore((state) => state.saveProgress)
 
   const [jump, setJump] = useState<JumpTarget | null>(null)
@@ -77,6 +78,7 @@ export default function App(): JSX.Element {
         onSelectDoc={handleDocChange}
         onJump={handleJump}
         onRemove={removeAnnotationById}
+        onSetDefinition={setManualDefinition}
       />
 
       {doc ? (

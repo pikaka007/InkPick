@@ -22,6 +22,15 @@ export interface Anchor {
 
 export type AnnotationType = 'vocab' | 'note'
 
+/** 词典查询的三种结局。pending = 刚收藏、还没查；missing = 词典里没有 */
+export type LookupStatus = 'pending' | 'found' | 'missing'
+
+export interface Sense {
+  /** 词性，如 `n.` `v.`，可能为空 */
+  pos: string
+  translation: string
+}
+
 export interface Annotation {
   id: string
   docId: string
@@ -29,8 +38,15 @@ export interface Annotation {
   anchor: Anchor
   /** 选中文本所在的那句话（创建时快照，原文改动后依然可读） */
   contextText: string
-  /** type === 'vocab' 时的词条。释义留空，第二步接词典填充 */
+  /** type === 'vocab' 时的词条（用户当时选中的原样） */
   term?: string
+  /** 词形还原后的原形，单词本按它分组。没有特殊关系时等于 term */
+  lemma?: string
+  phonetic?: string
+  senses?: Sense[]
+  /** 词典查不到时用户手写的一句释义 */
+  manualDefinition?: string
+  lookupStatus?: LookupStatus
   /** type === 'note' 时的笔记正文 */
   content?: string
   createdAt: number

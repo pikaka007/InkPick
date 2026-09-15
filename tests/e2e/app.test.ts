@@ -60,6 +60,18 @@ async function selectInParagraph(segmentIndex: number, word: string): Promise<vo
   await page.waitForSelector('.selection-toolbar')
 }
 
+async function collectWord(segmentIndex: number, word: string): Promise<void> {
+  await selectInParagraph(segmentIndex, word)
+  await page.getByRole('button', { name: '＋ 单词' }).click()
+}
+
+/** 定位某个词条分组，并等到它出现 */
+async function vocabGroup(lemma: string) {
+  const group = page.locator('.vocab-group').filter({ has: page.locator(`strong:text-is("${lemma}")`) })
+  await group.waitFor()
+  return group
+}
+
 beforeAll(async () => {
   userDataDir = await mkdtemp(join(tmpdir(), 'inkpick-e2e-'))
   await launch()
@@ -91,54 +103,70 @@ describe('读', () => {
   })
 })
 
-describe('钉', () => {
-  it('选中单词后弹出工具栏，收藏后进入单词本并带上原句上下文', async () => {
-    await selectInParagraph(0, 'Reading')
+describe('钉 · 词典', () => {
+  it('收藏单词后自动回填音标与释义', async () => {
+    await collectWord(0, 'Reading')
 
-    await page.getByRole('button', { name: '＋ 单词' }).click()
-    await page.waitForSelector('.annotation')
-
-    expect(await page.locator('.selection-toolbar').count()).toBe(0)
-
-    const first = page.locator('.annotation').first()
-    expect(await first.locator('strong').textContent()).toBe('Reading')
-    expect(await first.locator('em').textContent()).toBe('Reading slowly is a habit that few people cultivate.')
-    expect(await first.locator('.badge').textContent()).toBe('词')
+    // 回填后词条头部用词典里的规范形式（小写），所以这里等 'reading' 出现就等于等到了回填
+    const group = await vocabGroup('reading')
+    expect(await group.locator('.phonetic').textContent()).toMatch(/\S/)
+    expect(await group.locator('.vocab-definition').textContent()).toContain('阅读')
+    // 只有一次收藏时不显示计数
+    expect(await group.locator('.times').count()).toBe(0)
   })
 
-  it('选中一段文字可以写笔记', async () => {
-    await selectInParagraph(1, 'trained to skim')
+  it('同一词的不同形态归到同一组，而不是散成多条', async () => {
+    await collectWord(2, 'word')
+    await vocabGroup('word')
 
+    await collectWord(5, 'words')
+    const group = await vocabGroup('word')
+
+    // words → word，两次收藏在同一组里
+    await expect.poll(async () => group.locator('.occurrence').count()).toBe(2)
+    expect(await group.locator('.times').textContent()).toBe('×2')
+    // 变形那一条上标出用户当时选中的原样
+    expect(await group.locator('.occurrence-form').textContent()).toBe('words')
+  })
+
+  it('笔记不进单词本', async () => {
+    await selectInParagraph(1, 'trained to skim')
     await page.getByRole('button', { name: '＋ 笔记' }).click()
     await page.waitForSelector('.modal textarea')
     await page.locator('.modal textarea').fill('这句是关键')
-
     await page.getByRole('button', { name: /保存/ }).click()
     await page.waitForSelector('.modal', { state: 'detached' })
 
-    expect(await page.locator('.annotation').count()).toBe(2)
-
-    const note = page.locator('.annotation').nth(1)
-    expect(await note.locator('strong').textContent()).toBe('这句是关键')
-    expect(await note.locator('.badge').textContent()).toBe('记')
+    expect(await page.locator('.annotation').count()).toBe(1)
+    expect(await page.locator('.annotation strong').textContent()).toBe('这句是关键')
+    expect(await page.locator('.vocab-group').count()).toBe(2)
   })
 
-  it('标注计数出现在文档头部', async () => {
-    expect(await page.locator('.reader-meta').textContent()).toContain('2 条标注')
+  it('词典查不到时显示未收录，并允许自己补一句释义', async () => {
+    await collectWord(5, 'InkPick')
+
+    const group = await vocabGroup('InkPick')
+    await expect.poll(async () => group.locator('.vocab-definition .missing').textContent()).toBe('词典未收录')
+    expect(await group.locator('.missing-hint').count()).toBe(1)
+
+    await group.locator('.define-button').click()
+    await group.locator('.define-editor input').fill('这个阅读器本身')
+    await group.locator('.define-editor button').click()
+
+    await expect.poll(async () => group.locator('.vocab-definition').textContent()).toBe('这个阅读器本身')
+    expect(await group.locator('.missing-hint').count()).toBe(0)
   })
 })
 
 describe('看', () => {
-  it('点击列表项能定位回原文，并把该条标记为当前项', async () => {
-    const first = page.locator('.annotation').first()
-    await first.locator('.annotation-main').click()
+  it('点某一次收藏能跳回原文，并标出当前位置', async () => {
+    const group = await vocabGroup('word')
+    await group.locator('.occurrence').first().click()
 
-    await page.waitForSelector('.annotation.active')
-    expect(await page.locator('.annotation.active strong').textContent()).toBe('Reading')
+    await expect.poll(async () => group.locator('.occurrence.active').count()).toBe(1)
 
-    // 跳转后目标段落应滚进可视区
     const visible = await page.evaluate(() => {
-      const paragraph = document.querySelector('[data-seg="0"]')
+      const paragraph = document.querySelector('[data-seg="2"]')
       if (!paragraph) return false
       const rect = paragraph.getBoundingClientRect()
       return rect.top >= -5 && rect.top < window.innerHeight
@@ -146,46 +174,64 @@ describe('看', () => {
     expect(visible).toBe(true)
   })
 
-  it('可以删除标注', async () => {
-    const note = page.locator('.annotation').nth(1)
-    await note.locator('.annotation-remove').click()
+  it('标注计数反映的是收藏次数而不是分组数', async () => {
+    // Reading + word + words + InkPick + 1 条笔记
+    expect(await page.locator('.reader-meta').textContent()).toContain('5 条标注')
+  })
 
-    expect(await page.locator('.annotation').count()).toBe(1)
+  it('可以删除笔记', async () => {
+    await page.locator('.annotation .annotation-remove').click()
+    await expect.poll(async () => page.locator('.annotation').count()).toBe(0)
   })
 })
 
 describe('存', () => {
-  it('刚标注完就关窗（防抖还没触发）也不丢数据', async () => {
-    await selectInParagraph(3, 'tool')
-    await page.getByRole('button', { name: '＋ 单词' }).click()
-    await page.waitForSelector('.annotation')
-    expect(await page.locator('.annotation').count()).toBe(2)
-
+  it('刚收藏完就关窗（防抖还没触发）也不丢数据', async () => {
     // 不等防抖，直接关。主进程必须等渲染进程落盘
     await app.close()
 
     const raw = await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')
     const persisted = JSON.parse(raw) as {
       docs: unknown[]
-      annotations: { term?: string }[]
-      progress: Record<string, unknown>
+      annotations: {
+        type: string
+        term?: string
+        lemma?: string
+        senses?: { pos: string; translation: string }[]
+        manualDefinition?: string
+        lookupStatus?: string
+      }[]
     }
+
     expect(persisted.docs).toHaveLength(1)
-    expect(persisted.annotations.map((item) => item.term)).toEqual(['Reading', 'tool'])
-    expect(Object.keys(persisted.progress)).toHaveLength(1)
+    expect(persisted.annotations).toHaveLength(4)
+
+    const words = persisted.annotations.find((item) => item.term === 'words')
+    expect(words?.lookupStatus).toBe('found')
+    expect(words?.lemma).toBe('word')
+    expect(words?.senses?.length).toBeGreaterThan(0)
+
+    const inkpick = persisted.annotations.find((item) => item.term === 'InkPick')
+    expect(inkpick?.lookupStatus).toBe('missing')
+    expect(inkpick?.manualDefinition).toBe('这个阅读器本身')
   })
 
-  it('重开后回到上次的文档，标注与位置都还在', async () => {
+  it('重开后文档、分组、释义、手写释义都还在', async () => {
     await launch()
 
     await page.waitForSelector('.reader')
     expect(await page.locator('.welcome').count()).toBe(0)
     expect(await page.locator('.reader-header h1').textContent()).toBe('示例 · On Reading')
 
-    expect(await page.locator('.annotation').count()).toBe(2)
-    expect(await page.locator('.annotation strong').allTextContents()).toEqual(['Reading', 'tool'])
-    expect(await page.locator('.annotation em').first().textContent()).toBe(
-      'Reading slowly is a habit that few people cultivate.'
-    )
+    // 3 个词条分组（word 组内含 2 次收藏），笔记已删
+    await expect.poll(async () => page.locator('.vocab-group').count()).toBe(3)
+    expect(await page.locator('.annotation').count()).toBe(0)
+
+    const wordGroup = await vocabGroup('word')
+    expect(await wordGroup.locator('.occurrence').count()).toBe(2)
+    expect(await wordGroup.locator('.vocab-definition').textContent()).not.toContain('词典未收录')
+
+    const inkpick = await vocabGroup('InkPick')
+    expect(await inkpick.locator('.vocab-definition').textContent()).toBe('这个阅读器本身')
   })
 })

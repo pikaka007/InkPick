@@ -54,7 +54,7 @@ export function addAnnotation(store: Store, annotation: Annotation): Store {
 export function updateAnnotation(
   store: Store,
   id: string,
-  patch: Partial<Pick<Annotation, 'term' | 'content'>>,
+  patch: Partial<Omit<Annotation, 'id' | 'docId' | 'createdAt'>>,
   now = Date.now()
 ): Store {
   return {

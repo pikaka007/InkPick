@@ -9,4 +9,6 @@ The readers who remember what they read are not the fastest ones. They pause. Th
 
 This is the whole idea behind this little tool. While you read, mark what strikes you. Keep the word, keep the sentence around it, keep the page you were on. When you come back, everything is still where you left it.
 
-Annotating is not a chore you do for the text. It is how the text becomes yours.`
+Annotating is not a chore you do for the text. It is how the text becomes yours.
+
+InkPick keeps even the words no dictionary knows.`

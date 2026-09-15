@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run build && vitest run --config vitest.e2e.config.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dict:build": "esbuild scripts/build-dictionary.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/dict-build.mjs --log-level=warning && node node_modules/.cache/dict-build.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",

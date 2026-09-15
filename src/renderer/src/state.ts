@@ -13,9 +13,13 @@ import {
   getDoc,
   removeAnnotation,
   serializeStore,
-  setProgress
+  setProgress,
+  updateAnnotation
 } from '@core/store'
 import type { Anchor, Annotation, Doc, Store } from '@core/types'
+import type { OffsetRange } from './selection'
+
+export type { OffsetRange }
 
 const SAVE_DEBOUNCE_MS = 300
 
@@ -28,7 +32,7 @@ function scheduleSave(store: Store): void {
   saveTimer = setTimeout(flushSave, SAVE_DEBOUNCE_MS)
 }
 
-/** 立即落盘。关窗前必须调用，否则最后一次防抖会被丢掉 */
+/** 立即落盘。关窗时必须调用，否则最后一次防抖会被丢掉 */
 export async function flushSave(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer)
@@ -47,9 +51,12 @@ interface AppState {
   openDocument: () => Promise<void>
   loadSample: () => void
   selectDoc: (docId: string) => void
-  addVocab: (range: { start: number; end: number }, term: string) => void
-  addNote: (range: { start: number; end: number }, content: string) => void
+  addVocab: (range: OffsetRange, term: string) => void
+  addNote: (range: OffsetRange, content: string) => void
   removeAnnotationById: (id: string) => void
+  setManualDefinition: (annotationIds: string[], definition: string) => void
+  /** 查词并回填。查不到也正常，不回滚标注 */
+  lookupAndPatch: (term: string, annotationIds: string[]) => Promise<void>
   saveProgress: (docId: string, offset: number) => void
 }
 
@@ -61,27 +68,35 @@ export const useAppStore = create<AppState>((set, get) => {
     set({ store: next, ...extra })
   }
 
+  const patchAnnotations = (ids: string[], patch: Partial<Annotation>): void => {
+    if (ids.length === 0) return
+    commit((current) => ids.reduce((store, id) => updateAnnotation(store, id, patch), current))
+  }
+
   const createAnnotationFor = (
     type: 'vocab' | 'note',
-    range: { start: number; end: number },
+    range: OffsetRange,
     payload: { term?: string; content?: string }
-  ): void => {
+  ): Annotation | null => {
     const { store, currentDocId } = get()
-    if (!currentDocId) return
+    if (!currentDocId) return null
     const doc = getDoc(store, currentDocId)
-    if (!doc) return
+    if (!doc) return null
 
     const anchor = createAnchor(doc.content, range.start, range.end)
-    if (!anchor.text.trim()) return
+    if (!anchor.text.trim()) return null
 
     const annotation = createAnnotation({
       docId: currentDocId,
       type,
       anchor,
       contextText: sentenceAround(doc.content, range.start, range.end),
-      ...payload
+      ...payload,
+      // 先钉住、再查词：词典无论如何都不能让「收藏」这个动作失败
+      ...(type === 'vocab' ? { lookupStatus: 'pending' as const } : {})
     })
     commit((current) => addAnnotation(current, annotation))
+    return annotation
   }
 
   return {
@@ -93,8 +108,14 @@ export const useAppStore = create<AppState>((set, get) => {
       const raw = await window.api.readStore()
       const store = deserializeStore(raw)
       const lastDocId =
-        store.lastDocId && store.docs.some((d) => d.id === store.lastDocId) ? store.lastDocId : (store.docs[0]?.id ?? null)
+        store.lastDocId && store.docs.some((d) => d.id === store.lastDocId)
+          ? store.lastDocId
+          : (store.docs[0]?.id ?? null)
+
       set({ store, currentDocId: lastDocId, ready: true })
+
+      // 之前收的词可能还没查过（或上次查词失败），补一次
+      await backfillPending()
     },
 
     openDocument: async () => {
@@ -135,11 +156,38 @@ export const useAppStore = create<AppState>((set, get) => {
       commit((store) => ({ ...store, lastDocId: docId }), { currentDocId: docId })
     },
 
-    addVocab: (range, term) => createAnnotationFor('vocab', range, { term }),
+    addVocab: (range, term) => {
+      const annotation = createAnnotationFor('vocab', range, { term })
+      if (annotation) void get().lookupAndPatch(term, [annotation.id])
+    },
 
-    addNote: (range, content) => createAnnotationFor('note', range, { content }),
+    addNote: (range, content) => {
+      createAnnotationFor('note', range, { content })
+    },
 
     removeAnnotationById: (id) => commit((store) => removeAnnotation(store, id)),
+
+    setManualDefinition: (annotationIds, definition) => {
+      patchAnnotations(annotationIds, { manualDefinition: definition.trim() })
+    },
+
+    lookupAndPatch: async (term, annotationIds) => {
+      try {
+        const result = await window.api.lookupWord(term)
+        if (result.entry === null) {
+          patchAnnotations(annotationIds, { lookupStatus: 'missing' })
+          return
+        }
+        patchAnnotations(annotationIds, {
+          lookupStatus: 'found',
+          lemma: result.lemma,
+          phonetic: result.entry.phonetic,
+          senses: result.entry.senses
+        })
+      } catch {
+        // 查词失败就停在 pending，下次启动再补，绝不因此丢掉标注
+      }
+    },
 
     saveProgress: (docId, offset) => {
       const doc = getDoc(get().store, docId)
@@ -148,6 +196,27 @@ export const useAppStore = create<AppState>((set, get) => {
     }
   }
 })
+
+/** 把还停在 pending 的词条补查一遍（同一个词只查一次） */
+async function backfillPending(): Promise<void> {
+  const pendingVocab = useAppStore
+    .getState()
+    .store.annotations.filter((item) => item.type === 'vocab' && item.lookupStatus === 'pending')
+  if (pendingVocab.length === 0) return
+
+  const byTerm = new Map<string, string[]>()
+  for (const annotation of pendingVocab) {
+    const term = (annotation.term ?? annotation.anchor.text).trim()
+    if (!term) continue
+    const ids = byTerm.get(term) ?? []
+    ids.push(annotation.id)
+    byTerm.set(term, ids)
+  }
+
+  for (const [term, ids] of byTerm) {
+    await useAppStore.getState().lookupAndPatch(term, ids)
+  }
+}
 
 export function currentDoc(state: AppState): Doc | null {
   return state.currentDocId ? (getDoc(state.store, state.currentDocId) ?? null) : null

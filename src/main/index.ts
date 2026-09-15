@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { normalizeContent } from '../core/text'
 import type { ImportedDocument } from '../core/api'
+import { dictionaryStatus, lookupWord } from './dictionary'
 import { readStoreFile, storeFilePath, writeStoreFile } from './storeFile'
 
 const isDev = !app.isPackaged
@@ -91,6 +92,10 @@ function registerIpc(): void {
   ipcMain.handle('store:reveal', async () => {
     shell.showItemInFolder(storeFilePath())
   })
+
+  ipcMain.handle('dict:lookup', async (_event, word: string) => lookupWord(word))
+
+  ipcMain.handle('dict:status', async () => dictionaryStatus())
 }
 
 void app.whenReady().then(() => {
