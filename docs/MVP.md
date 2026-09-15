@@ -105,7 +105,7 @@ shell/         Electron 壳：渲染、文件访问、IPC
 | UI | React + TypeScript |
 | 样式 | Tailwind CSS + shadcn/ui |
 | 状态 | Zustand |
-| 存储 | better-sqlite3（需 electron-rebuild） |
+| 存储 | **JSON 单文件**（`userData/inkpick-store.json`）；MVP 不用 SQLite —— 零原生依赖，不用 electron-rebuild，几千条标注完全够用 |
 | 测试 | Vitest（`core/`）+ Playwright（Electron E2E） |
 | 打包 | electron-builder |
 
@@ -117,7 +117,18 @@ shell/         Electron 壳：渲染、文件访问、IPC
 
 - `core/anchor.ts` 的重定位是**最高价值单测点**：改排版、改版本后能否找回原文，全靠它。
 - 纯逻辑走 Vitest，跑得快。
-- 交互闭环（选中 → 收藏 → 列表 → 跳回）走 Playwright E2E。
+- 交互闭环（选中 → 收藏 → 列表 → 跳回 → 重启不丢）走 Playwright E2E，直接驱动真实 Electron。
+- 跑测试的方式与「测试要能失败」的要求，见 [`AGENTS.md`](../AGENTS.md)。
+
+### 已知偏离计划之处
+
+- **存储用 JSON 而非 better-sqlite3**：理由见上表。换 SQLite 时只需改 `src/main/storeFile.ts`
+  与 `src/core/store.ts`，上层不动。
+- **未接入 Lint**：待补。
+- **未配置 CSP**：正文全程用 React 文本节点渲染（无 `dangerouslySetInnerHTML`），
+  且不加载远程内容，风险可控；打包前补上。
+- **TXT 分段即分段**：硬换行的 TXT（如 Gutenberg）会把每行当一个段落。
+  代价是行距偏大，好处是偏移量映射简单可靠。后续按标点合并行可改善。
 
 ### 待定
 

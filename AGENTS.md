@@ -48,17 +48,36 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 
 ## 测试命令
 
-（脚手架搭建后补全，届时替换本节占位）
-
 | 用途 | 命令 |
 |---|---|
-| 单元测试 | `npm test`（Vitest，覆盖 `core/`） |
-| 端到端 | `npm run test:e2e`（Playwright，Electron） |
+| 单元测试 | `npm test`（Vitest） |
+| 端到端 | `npm run test:e2e`（Playwright 驱动真实 Electron，会先 `build`） |
 | 类型检查 | `npm run typecheck` |
-| Lint | `npm run lint` |
 | 构建 | `npm run build` |
+| Lint | **尚未接入** —— 补上之前不要假装跑过 |
 
-`core/anchor.ts` 的重定位逻辑是最高价值单测点，改动它必须补测试。
+改动后的最低要求：
+
+- 任何改动：`npm test && npm run typecheck`
+- 动了界面 / 主进程 / 持久化：还要跑 `npm run test:e2e`
+- 改了 `src/core/anchor.ts`、`src/renderer/src/selection.ts`、`src/main/storeFile.ts`、
+  或关窗落盘握手：**必须**跑 `npm run test:e2e`
+
+### 测试要能失败
+
+改了上述高风险模块后，除了跑通，还要确认测试真能抓到回归：
+故意把逻辑改坏 → 确认测试失败 → 改回来。
+不要拿“测试通过”给一个其实没断言到东西的测试交差。
+
+## 项目结构
+
+```
+src/core/       纯 TS，无框架无 DOM 依赖 —— 业务逻辑全在这里
+src/main/       Electron 主进程：窗口、IPC、文件读写（含关窗落盘握手）
+src/preload/    contextBridge 最小 API
+src/renderer/   React 界面；selection.ts 是 DOM 选区 ⇄ 全文偏移量的映射
+tests/          Vitest 单测；tests/e2e 是真实 Electron 的验收测试
+```
 
 ## 代码约定
 
