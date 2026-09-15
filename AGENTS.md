@@ -28,6 +28,7 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
    - `AGENTS.md`：流程、测试命令、约束
    - `docs/DICTIONARY.md`：词库相关
   - `docs/EXPORT.md`：导出格式相关
+  - `docs/ROADMAP.md`：未完成清单与优先级（有新的缺口发现就写这里）
    - 发现与计划不符（如某方案实测不可行），**必须写下来**，而不是默默不做。
 4. **提交并推送**：`git add` + `git commit` + `git push`。一个逻辑变更一个 commit。
 5. **汇报**：向用户说明「改了什么 / 测试结果 / 文档 / commit 号」。

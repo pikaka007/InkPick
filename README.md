@@ -20,8 +20,8 @@
 | **带走** | 导出 Anki CSV（背单词） / Markdown（词表 + 笔记） |
 | **存** | 本地 JSON 持久化，重启不丢 |
 
-范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)，词库见 [`docs/DICTIONARY.md`](docs/DICTIONARY.md)，
-导出格式与 Anki 导入步骤见 [`docs/EXPORT.md`](docs/EXPORT.md)。
+范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)；**还缺什么、缺到什么程度，见 [`docs/ROADMAP.md`](docs/ROADMAP.md)**；
+词库见 [`docs/DICTIONARY.md`](docs/DICTIONARY.md)，导出格式与 Anki 导入步骤见 [`docs/EXPORT.md`](docs/EXPORT.md)。
 
 ## 快速开始
 
