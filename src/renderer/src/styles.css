@@ -135,12 +135,14 @@ button.ghost:hover {
 }
 
 .sidebar-resizer {
+  position: relative;
+  /* 定位 + z-index：保证整条 10px 都是可拖区域，不被相邻内容盖住一半 */
+  z-index: 5;
   flex: none;
   width: 10px;
   /* 叠在边界上，不占布局宽度 */
   margin-left: -5px;
   cursor: col-resize;
-  z-index: 5;
 }
 
 .sidebar-resizer:hover,
@@ -150,8 +152,72 @@ button.ghost:hover {
 
 .sidebar-toggle {
   flex: none;
-  font-size: 13px;
-  padding: 4px 8px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border-color: var(--border);
+}
+
+.sidebar-toggle:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+/* ---------- 阅读设置面板 ---------- */
+
+.settings-wrap {
+  position: relative;
+}
+
+.settings-wrap .tool.active {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.settings-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.setting-row select {
+  min-width: 110px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.setting-row select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .welcome-toggle {
@@ -712,13 +778,13 @@ ul {
 .reader-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 28px 12px;
+  gap: 14px;
+  padding: 12px 28px 12px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .reader-title {
+  flex: 1;
   min-width: 0;
 }
 

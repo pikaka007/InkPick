@@ -1,18 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { resolveAnchor } from '@core/anchor'
-import {
-  LINE_HEIGHTS,
-  MEASURE_LABELS,
-  MEASURE_WIDTHS,
-  THEME_LABELS,
-  THEMES,
-  MEASURES,
-  nextInCycle,
-  progressRatio,
-  scrollTopForRatio,
-  stepFontSize
-} from '@core/prefs'
+import { MEASURE_WIDTHS, progressRatio, scrollTopForRatio, stepFontSize } from '@core/prefs'
 import type { ReaderPrefs } from '@core/prefs'
 import { findMatches, formatMatchPosition, stepMatchIndex } from '@core/search'
 import { splitParagraphs } from '@core/text'
@@ -21,6 +10,7 @@ import { applyHighlight, clearHighlight, highlightSupported } from '@renderer/hi
 import { elementAtOffset, rangeForOffsets, rangeToOffsets, segmentStarts } from '@renderer/selection'
 import type { OffsetRange } from '@renderer/selection'
 import ProgressBar from './ProgressBar'
+import ReaderSettings from './ReaderSettings'
 import SidebarToggle from './SidebarToggle'
 
 export interface JumpTarget extends OffsetRange {
@@ -77,13 +67,20 @@ export default function Reader({
   const [noteText, setNoteText] = useState('')
   const [ratio, setRatio] = useState(0)
 
-  /** 搜索。query 为空时不算在搜 */
+  /** 搜索。query 为空时不算在搜。matchIndex = -1 表示“有命中但还没跳过去” */
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [matchIndex, setMatchIndex] = useState(0)
+  const [matchIndex, setMatchIndex] = useState(-1)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  /** 开始搜索前读到的正文位置。存偏移量而不是 scrollTop ——
+   * 搜索框一出现头部会变高，可滚范围跟着变，按像素记会回不准 */
+  const searchOriginRef = useRef(0)
 
   const search = useMemo(() => findMatches(doc.content, query), [doc.content, query])
+
+  /** 阅读设置面板 */
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsRef = useRef<HTMLDivElement>(null)
 
   const segments = useMemo(() => splitParagraphs(doc.content), [doc.content])
   const starts = useMemo(() => segmentStarts(segments), [segments])
@@ -142,10 +139,21 @@ export default function Reader({
     return undefined
   }, [jump, starts])
 
-  // 换了查询词就从第一个命中重新开始
+  // 换了查询词就回到「有命中但还没跳过去」的状态，不要自己跑过去
   useEffect(() => {
-    setMatchIndex(0)
+    setMatchIndex(-1)
   }, [query])
+
+  // 点面板外面关闭设置
+  useEffect(() => {
+    if (!settingsOpen) return
+    const onPointerDown = (event: PointerEvent): void => {
+      if (settingsRef.current?.contains(event.target as Node)) return
+      setSettingsOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [settingsOpen])
 
   // 把所有命中画成高亮，当前那个更明显
   useEffect(() => {
@@ -167,7 +175,10 @@ export default function Reader({
     }
   }, [search, matchIndex, starts])
 
-  // 跳到当前命中
+  // 跳到当前命中。
+  // 只在你**主动**跳（回车 / 上下按钮 / 回到原处）时触发：
+  // 因为 matchIndex 在输入时是 -1，而查询一变就重置回 -1，
+  // 所以“边打字边被拉到第一个命中”这种事不会再发生。
   useEffect(() => {
     const root = rootRef.current
     const current = search.matches[matchIndex]
@@ -182,9 +193,20 @@ export default function Reader({
     [search.matches.length]
   )
 
+  const openSearch = (): void => {
+    // 记下开始搜索前读到哪儿，【回到原处】靠它
+    searchOriginRef.current = topOffsetOf()
+    setSearchOpen(true)
+  }
+
   const closeSearch = (): void => {
     setSearchOpen(false)
     setQuery('')
+  }
+
+  const returnToOrigin = (): void => {
+    scrollToOffset(searchOriginRef.current)
+    closeSearch()
   }
 
   // Ctrl/⌘+F 打开搜索
@@ -192,38 +214,54 @@ export default function Reader({
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
       event.preventDefault()
-      setSearchOpen(true)
+      openSearch()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
+    // openSearch 只用到 ref 与 setState，不需要跟着重订阅
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus()
   }, [searchOpen])
 
-  const handleScroll = useCallback(() => {
+  /** 当前视口顶部对应的正文位置 —— 阅读进度与「回到原处」共用同一套算法 */
+  const topOffsetOf = useCallback((): number => {
     const container = scrollRef.current
     const root = rootRef.current
-    if (!container || !root) return
+    if (!container || !root) return starts[0] ?? 0
+
+    const top = container.scrollTop + 8
+    for (const element of root.querySelectorAll<HTMLElement>('[data-seg]')) {
+      if (element.offsetTop + element.offsetHeight > top) {
+        return starts[Number(element.dataset.seg)] ?? 0
+      }
+    }
+    return starts[0] ?? 0
+  }, [starts])
+
+  const scrollToOffset = useCallback(
+    (offset: number): void => {
+      const root = rootRef.current
+      if (!root) return
+      elementAtOffset(root, starts, offset)?.scrollIntoView({ block: 'start' })
+    },
+    [starts]
+  )
+
+  const handleScroll = useCallback(() => {
+    const container = scrollRef.current
+    if (!container) return
 
     setRatio(progressRatio(container.scrollTop, container.scrollHeight, container.clientHeight))
 
-    const top = container.scrollTop + 8
-    const elements = root.querySelectorAll<HTMLElement>('[data-seg]')
-    let offset = starts[0] ?? 0
-    for (const element of elements) {
-      if (element.offsetTop + element.offsetHeight > top) {
-        offset = starts[Number(element.dataset.seg)] ?? offset
-        break
-      }
-    }
-
+    const offset = topOffsetOf()
     if (offset !== lastReportedRef.current) {
       lastReportedRef.current = offset
       onProgress(offset)
     }
-  }, [starts, onProgress])
+  }, [topOffsetOf, onProgress])
 
   const handleSelection = useCallback(() => {
     const root = rootRef.current
@@ -287,6 +325,9 @@ export default function Reader({
   return (
     <div className="reader">
       <header className="reader-header">
+        {/* 放在内容区最左侧：紧贴侧栏边界，且收起/展开位置不变 */}
+        <SidebarToggle collapsed={sidebarCollapsed} onToggle={onToggleSidebar} />
+
         <div className="reader-title">
           <h1>{doc.title}</h1>
           <span className="reader-meta">
@@ -297,8 +338,6 @@ export default function Reader({
         </div>
 
         <div className="reader-tools">
-          <SidebarToggle collapsed={sidebarCollapsed} onToggle={onToggleSidebar} />
-
           {searchOpen ? (
             <div className="search-box">
               <input
@@ -343,6 +382,15 @@ export default function Reader({
               >
                 ↓
               </button>
+              <button
+                type="button"
+                className="tool"
+                title="回到开始搜索时的位置并关闭"
+                aria-label="回到原处"
+                onClick={returnToOrigin}
+              >
+                ⇤
+              </button>
               <button type="button" className="tool" title="关闭搜索（Esc）" aria-label="关闭搜索" onClick={closeSearch}>
                 ✕
               </button>
@@ -353,7 +401,7 @@ export default function Reader({
               className="tool"
               title="搜索（Ctrl/⌘+F）"
               aria-label="搜索"
-              onClick={() => setSearchOpen(true)}
+              onClick={openSearch}
             >
               搜索
             </button>
@@ -379,32 +427,19 @@ export default function Reader({
             A+
           </button>
 
-          <button
-            type="button"
-            className="tool"
-            title="行距"
-            onClick={() => onPrefsChange({ lineHeight: nextInCycle(LINE_HEIGHTS, prefs.lineHeight as (typeof LINE_HEIGHTS)[number]) })}
-          >
-            行距 {prefs.lineHeight}
-          </button>
-
-          <button
-            type="button"
-            className="tool"
-            title="行宽"
-            onClick={() => onPrefsChange({ measure: nextInCycle(MEASURES, prefs.measure) })}
-          >
-            行宽 {MEASURE_LABELS[prefs.measure]}
-          </button>
-
-          <button
-            type="button"
-            className="tool"
-            title="主题"
-            onClick={() => onPrefsChange({ theme: nextInCycle(THEMES, prefs.theme) })}
-          >
-            主题 {THEME_LABELS[prefs.theme]}
-          </button>
+          <div className="settings-wrap" ref={settingsRef}>
+            <button
+              type="button"
+              className={settingsOpen ? 'tool active' : 'tool'}
+              title="阅读设置"
+              aria-label="阅读设置"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              Aa
+            </button>
+            {settingsOpen && <ReaderSettings prefs={prefs} onChange={onPrefsChange} />}
+          </div>
         </div>
       </header>
 

@@ -91,7 +91,7 @@ for (const theme of THEMES) {
   await shoot(`theme-${theme}`)
 }
 
-// 回到浅色，再出一张「选中态 + 工具栏」和一张「深色主题下的选中态」
+// 回到浅色，再出几张交互态的图
 await setTheme('light')
 await select(4, 'Annotating')
 await page.waitForTimeout(300)
@@ -100,6 +100,27 @@ await shoot('selection-toolbar')
 await setTheme('dark')
 await page.waitForTimeout(200)
 await shoot('dark-with-toolbar')
+
+// 阅读设置面板
+await setTheme('light')
+await page.getByRole('button', { name: '阅读设置' }).click()
+await page.waitForSelector('.settings-panel')
+await page.waitForTimeout(200)
+await shoot('settings-panel')
+await page.locator('.reader-body').click({ position: { x: 5, y: 5 } })
+
+// 搜索态：全部命中淡高亮 + 当前命中强高亮
+await page.getByRole('button', { name: '搜索', exact: true }).click()
+await page.locator('.search-input').fill('the')
+await page.locator('.search-input').press('Enter')
+await page.waitForTimeout(400)
+await shoot('search')
+await page.locator('.search-input').press('Escape')
+
+// 侧栏收起：正文占满宽度
+await page.getByRole('button', { name: '隐藏侧栏' }).click()
+await page.waitForTimeout(200)
+await shoot('sidebar-collapsed')
 
 await app.close()
 await rm(userDataDir, { recursive: true, force: true })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { resolveAnchor } from '@core/anchor'
 import {
@@ -192,12 +192,19 @@ export default function App(): JSX.Element {
    * 拖拽把手。
    *
    * 用窗口级监听而不是 setPointerCapture：捕获一旦在前一次拖拽里没释放干净，
-   * 后续 pointermove / pointerup 会直接收不到（实测踩过），换来的就只是一个
-   * 同样能实现的功能，但不会坏在状态残留上。
+   * 后续 pointermove / pointerup 会直接收不到（实测踩过）。
+   *
+   * 窗口级监听也有它自己的风险：松手发生在窗口之外时 pointerup 可能递不到，
+   * 监听就会残留、之后每次鼠标移动都继续改宽度。所以下一次拖拽开始前先把
+   * 上一个没收尾的收掉。
    */
+  const dragCleanupRef = useRef<(() => void) | null>(null)
+
   const startDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0) return
     event.preventDefault()
+
+    dragCleanupRef.current?.()
 
     const start = { x: event.clientX, width: sidebarWidth }
     let latest: number | null = null
@@ -213,12 +220,14 @@ export default function App(): JSX.Element {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', finish)
       window.removeEventListener('pointercancel', finish)
+      dragCleanupRef.current = null
       setDragging(false)
       setDragWidth(null)
       // 没动过就不提交，否则单击一下也会写一次存档
       if (latest !== null) updatePrefs({ sidebarWidth: latest })
     }
 
+    dragCleanupRef.current = finish
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', finish)
     window.addEventListener('pointercancel', finish)

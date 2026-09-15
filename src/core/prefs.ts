@@ -41,6 +41,17 @@ export const MEASURE_WIDTHS: Record<Measure, string> = {
 export const MEASURE_LABELS: Record<Measure, string> = { narrow: '窄', medium: '中', wide: '宽' }
 export const THEME_LABELS: Record<Theme, string> = { light: '浅色', sepia: '护眼', dark: '深色' }
 
+/** 行高用名字而不是 1.85 这种数字，下拉框里更好认 */
+export const LINE_HEIGHT_LABELS: Record<string, string> = {
+  '1.6': '紧凑',
+  '1.85': '标准',
+  '2.1': '宽松'
+}
+
+export function lineHeightLabel(value: number): string {
+  return LINE_HEIGHT_LABELS[String(value)] ?? String(value)
+}
+
 /* ---------- 侧栏 ---------- */
 
 /** 再窄就放不下文档标题和引用原文了 */

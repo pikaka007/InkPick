@@ -63,8 +63,8 @@ export function stepMatchIndex(current: number, total: number, direction: 1 | -1
   return (current + direction + total) % total
 }
 
-/** `3/128`，没有命中时给空串让界面自己决定显示什么 */
+/** `3/128`；0/128 表示「有 128 处命中，但还没跳到任何一处」 */
 export function formatMatchPosition(index: number, total: number): string {
   if (total <= 0) return ''
-  return `${Math.min(index + 1, total)}/${total}`
+  return `${Math.min(Math.max(index + 1, 0), total)}/${total}`
 }

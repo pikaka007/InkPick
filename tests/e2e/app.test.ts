@@ -8,7 +8,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { _electron as electron } from 'playwright-core'
 import type { ElectronApplication, Page } from 'playwright-core'
 import { parseCsvRecords } from '../../src/core/csv'
@@ -378,6 +378,39 @@ describe('阅读体验', () => {
   const appBackground = (): Promise<string> =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
+  // 设置面板浮在正文上方，留着会挡住后面的点击
+  afterEach(async () => {
+    if (await page.locator('.settings-panel').count()) {
+      await page.locator('.reader-body').click({ position: { x: 5, y: 5 } })
+      await expect.poll(async () => page.locator('.settings-panel').count()).toBe(0)
+    }
+  })
+
+  /** 打开阅读设置面板 */
+  const openSettings = async (): Promise<void> => {
+    if ((await page.locator('.settings-panel').count()) === 0) {
+      await page.getByRole('button', { name: '阅读设置' }).click()
+      await page.waitForSelector('.settings-panel')
+    }
+  }
+
+  it('阅读设置是一个面板，而不是一排循环切换的按钮', async () => {
+    await openSettings()
+
+    for (const name of ['字号', '行距', '行宽', '主题']) {
+      expect(await page.getByLabel(name, { exact: true }).count(), `${name} 下拉框`).toBe(1)
+    }
+
+    // 头部不再有几个「每点一次换一个值」的按钮
+    expect(await page.getByRole('button', { name: /^行距/ }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: /^主题/ }).count()).toBe(0)
+  })
+
+  it('点面板外面会关掉设置', async () => {
+    await page.locator('.reader-body').click({ position: { x: 5, y: 5 } })
+    await expect.poll(async () => page.locator('.settings-panel').count()).toBe(0)
+  })
+
   it('放大字号会真的改变正文字号', async () => {
     const before = await bodyFontSize()
     await page.getByRole('button', { name: '放大字号' }).click()
@@ -393,32 +426,47 @@ describe('阅读体验', () => {
     await expect.poll(bodyFontSize).toBe('21px')
   })
 
-  it('切换行距会改变行高', async () => {
+  it('下拉框能直接选到任意一档，不用按顺序点', async () => {
+    await openSettings()
+
+    // 从最大字号直接跳到最小，不用点六次
+    await page.getByLabel('字号', { exact: true }).selectOption('15')
+    await expect.poll(bodyFontSize).toBe('15px')
+
+    await page.getByLabel('字号', { exact: true }).selectOption('21')
+    await expect.poll(bodyFontSize).toBe('21px')
+  })
+
+  it('行距下拉框会改变行高', async () => {
+    await openSettings()
     const before = await bodyLineHeight()
-    await page.getByRole('button', { name: /^行距/ }).click()
+
+    await page.getByLabel('行距', { exact: true }).selectOption('1.6')
     await expect.poll(bodyLineHeight).not.toBe(before)
+    expect(parseFloat(await bodyLineHeight())).toBeLessThan(parseFloat(before))
   })
 
-  it('切换行宽会改变正文宽度', async () => {
+  it('行宽下拉框会改变正文宽度', async () => {
+    await openSettings()
     const before = await bodyWidth()
-    await page.getByRole('button', { name: /^行宽/ }).click()
-    await expect.poll(bodyWidth).not.toBe(before)
-    expect(await bodyWidth()).toBeGreaterThan(before)
+
+    await page.getByLabel('行宽', { exact: true }).selectOption('wide')
+    await expect.poll(bodyWidth).toBeGreaterThan(before)
   })
 
-  it('切换主题会换掉整页配色', async () => {
+  it('主题下拉框会换掉整页配色', async () => {
+    await openSettings()
     const light = await appBackground()
     expect(await theme()).toBe('light')
 
-    await page.getByRole('button', { name: /^主题/ }).click()
+    await page.getByLabel('主题', { exact: true }).selectOption('sepia')
     await expect.poll(theme).toBe('sepia')
     const sepia = await appBackground()
     expect(sepia).not.toBe(light)
 
-    await page.getByRole('button', { name: /^主题/ }).click()
+    await page.getByLabel('主题', { exact: true }).selectOption('dark')
     await expect.poll(theme).toBe('dark')
-    const dark = await appBackground()
-    expect(dark).not.toBe(sepia)
+    expect(await appBackground()).not.toBe(sepia)
   })
 
   it('三套主题的正文对比度都达得到 WCAG AA', async () => {
@@ -635,8 +683,9 @@ describe('侧栏', () => {
     const handle = page.locator('.sidebar-resizer')
     const box = (await handle.boundingBox())!
 
-    // 注意：拖拽路径必须留在窗口内。把指针拖出窗口再松手，pointerup 可能递不到
-    const viewport = page.viewportSize() ?? { width: 1280, height: 800 }
+    // 注意：拖拽路径必须留在窗口内。把指针拖出窗口再松手，pointerup 可能递不到。
+    // 不能用 viewportSize()：Electron 里它是 null，要用窗口自身的宽度
+    const windowWidth = await page.evaluate(() => window.innerWidth)
 
     // 拽到极窄
     await page.mouse.move(box.x + box.width / 2, box.y + 200)
@@ -649,7 +698,7 @@ describe('侧栏', () => {
     const again = (await handle.boundingBox())!
     await page.mouse.move(again.x + again.width / 2, again.y + 200)
     await page.mouse.down()
-    await page.mouse.move(viewport.width - 5, again.y + 200, { steps: 3 })
+    await page.mouse.move(windowWidth - 5, again.y + 200, { steps: 3 })
     await page.mouse.up()
     expect(await sidebarWidth()).toBe(520)
   })
@@ -696,6 +745,29 @@ describe('侧栏', () => {
 })
 
 describe('搜索', () => {
+  const scrollTop = (): Promise<number> =>
+    page.evaluate(() => Math.round(document.querySelector('.reader-scroll')?.scrollTop ?? -1))
+
+  /** 当前视口顶部所在的段落序号 —— 「回到原处」承诺的就是这个 */
+  const topSegment = (): Promise<string | null> =>
+    page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')
+      if (!container) return null
+      const top = container.scrollTop + 8
+      for (const element of document.querySelectorAll<HTMLElement>('[data-seg]')) {
+        if (element.offsetTop + element.offsetHeight > top) return element.getAttribute('data-seg')
+      }
+      return null
+    })
+
+  /** 每个用例自己保证搜索框是开着的，不依赖上一个用例的收尾状态 */
+  const openSearchBox = async (): Promise<void> => {
+    if ((await page.locator('.search-input').count()) === 0) {
+      await page.getByRole('button', { name: '搜索', exact: true }).click()
+      await page.waitForSelector('.search-input')
+    }
+  }
+
   const currentMatch = async (): Promise<string> =>
     page.evaluate(() => {
       const highlight = (CSS as unknown as { highlights?: Map<string, Set<Range>> }).highlights?.get(
@@ -730,24 +802,41 @@ describe('搜索', () => {
 
   it('点搜索才打开输入框', async () => {
     expect(await page.locator('.search-input').count()).toBe(0)
-    await page.getByRole('button', { name: '搜索' }).click()
+    await page.getByRole('button', { name: '搜索', exact: true }).click()
     expect(await page.locator('.search-input').count()).toBe(1)
   })
 
-  it('输入后显示命中数与当前位置', async () => {
+  it('输入后显示命中数，但不自动跳过去', async () => {
+    await openSearchBox()
+    const before = await scrollTop()
     await page.locator('.search-input').fill('habit')
 
-    // 示例文本里 habit 只出现一次
-    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('1/1')
+    // 示例文本里 habit 只出现一次。0/1 = 有命中但还没跳过去
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('0/1')
     expect(await allMatchCount()).toBe(1)
+    expect(await currentMatch()).toBe('')
+
+    // 关键：边输入边被拉走是上一版的毛病，现在不能发生
+    expect(await scrollTop()).toBe(before)
+  })
+
+  it('按回车才跳到第一处', async () => {
+    await openSearchBox()
+    await page.locator('.search-input').press('Enter')
+
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('1/1')
     expect(await currentMatch()).toContain('habit')
   })
 
   it('命中多处时能上下跳，并绕回', async () => {
+    await openSearchBox()
     await page.locator('.search-input').fill('the')
 
     const total = await allMatchCount()
     expect(total).toBeGreaterThan(3)
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`0/${total}`)
+
+    await page.getByRole('button', { name: '下一个匹配' }).click()
     await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`1/${total}`)
 
     await page.getByRole('button', { name: '下一个匹配' }).click()
@@ -763,22 +852,26 @@ describe('搜索', () => {
   })
 
   it('点下一个后当前命中会真的挪到下一处', async () => {
-    // 先换个词再换回来，确保从第一个命中重新开始
-    // （上一条测试结束时停在最后一处，不重置的话「下一个」是绕回第一处）
-    await page.locator('.search-input').fill('habit')
+    await openSearchBox()
     await page.locator('.search-input').fill('the')
 
+    await page.getByRole('button', { name: '下一个匹配' }).click()
+    await expect.poll(currentMatchPosition).toBeGreaterThan(0)
     const first = await currentMatchPosition()
-    expect(first).toBeGreaterThan(0)
 
     await page.getByRole('button', { name: '下一个匹配' }).click()
+    // 当前命中的文字都是 the，只能靠位置判断有没有往前跳
     await expect.poll(currentMatchPosition).toBeGreaterThan(first)
   })
 
   it('回车等于下一个，Shift+回车等于上一个', async () => {
+    await openSearchBox()
     await page.locator('.search-input').fill('read')
     const total = await allMatchCount()
     expect(total).toBeGreaterThan(1)
+
+    await page.locator('.search-input').press('Enter')
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`1/${total}`)
 
     await page.locator('.search-input').press('Enter')
     await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`2/${total}`)
@@ -787,7 +880,37 @@ describe('搜索', () => {
     await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`1/${total}`)
   })
 
+  it('【回到原处】能回到开始搜索前读到的那一段', async () => {
+    await openSearchBox()
+
+    // 先把阅读位置挪到相对靠后的地方
+    await page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')!
+      container.scrollTop = Math.round((container.scrollHeight - container.clientHeight) * 0.7)
+    })
+    await expect.poll(topSegment).not.toBe('0')
+    const origin = await topSegment()
+
+    // 关掉再重新打开搜索，让它记住当前位置
+    await page.locator('.search-input').press('Escape')
+    await expect.poll(async () => page.locator('.search-input').count()).toBe(0)
+    await openSearchBox()
+
+    // 跳到几处命中，确实离开了原处
+    await page.locator('.search-input').fill('the')
+    await page.locator('.search-input').press('Enter')
+    await page.locator('.search-input').press('Enter')
+    await page.locator('.search-input').press('Enter')
+
+    await page.getByRole('button', { name: '回到原处' }).click()
+
+    await expect.poll(topSegment).toBe(origin)
+    // 回到原处后搜索框也关掉了
+    expect(await page.locator('.search-input').count()).toBe(0)
+  })
+
   it('搜不到时明确说「无匹配」，不留上一轮的高亮', async () => {
+    await openSearchBox()
     await page.locator('.search-input').fill('zzzzqqqq')
 
     await expect.poll(async () => page.locator('.search-count').textContent()).toBe('无匹配')
@@ -796,11 +919,13 @@ describe('搜索', () => {
   })
 
   it('大小写不敏感', async () => {
+    await openSearchBox()
     await page.locator('.search-input').fill('HABIT')
-    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('1/1')
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('0/1')
   })
 
   it('Esc 关闭并清空搜索', async () => {
+    await openSearchBox()
     await page.locator('.search-input').fill('habit')
     await page.locator('.search-input').press('Escape')
 

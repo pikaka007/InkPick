@@ -131,6 +131,7 @@ scripts/        dict:build 词库构建脚本
 - **不要把含中文 / emoji / 反引号的文本写进 `bash -c "node -e ..."` 这类脚本里**：
   反引号会被 shell 当命令替换（会把 Markdown 链接文字吃掉），emoji 会被换成 `?`。
   改文档用编辑工具直接改文件；改动后用 `npm run check:docs` 兜底体检。
+  已踩过两次：Markdown 链接文字被吃掉、✅ 与 ⌘ 被换成 `?`。这类损坏很静默，务必跑体检。
 
 ## 汇报格式
 
