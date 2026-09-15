@@ -674,7 +674,7 @@ describe('侧栏', () => {
     page.evaluate(() => document.querySelector('.sidebar-wrap')?.getBoundingClientRect().width ?? 0)
 
   it('可以收起，收起后侧栏不再渲染', async () => {
-    expect(await sidebarWidth()).toBeGreaterThan(200)
+    await expect.poll(sidebarWidth).toBeGreaterThan(200)
 
     await page.getByRole('button', { name: '隐藏侧栏' }).click()
 
@@ -729,7 +729,11 @@ describe('侧栏', () => {
     await page.mouse.down()
     await page.mouse.move(5, box.y + 200, { steps: 3 })
     await page.mouse.up()
-    expect(await sidebarWidth()).toBe(200)
+    //
+    // 必须用 expect.poll，不能裸读：pointermove 属于「连续事件」，
+    // React 会把这一串 setState 批处理，page.evaluate 可能在渲染前就执行，
+    // 于是读到拖拽前的宽度。实测这个写法大约有一半概率会假失败。
+    await expect.poll(sidebarWidth).toBe(200)
 
     // 拽到极宽（但仍在窗口内）
     const again = (await handle.boundingBox())!
@@ -737,7 +741,7 @@ describe('侧栏', () => {
     await page.mouse.down()
     await page.mouse.move(windowWidth - 5, again.y + 200, { steps: 3 })
     await page.mouse.up()
-    expect(await sidebarWidth()).toBe(520)
+    await expect.poll(sidebarWidth).toBe(520)
   })
 
   it('双击把手复位成默认宽度', async () => {
@@ -766,7 +770,7 @@ describe('侧栏', () => {
 
   it('重开后宽度和收起状态都还在', async () => {
     await page.waitForSelector('.reader')
-    expect(await sidebarWidth()).toBe(365)
+    await expect.poll(sidebarWidth).toBe(365)
 
     await page.getByRole('button', { name: '隐藏侧栏' }).click()
     await app.close()
@@ -1111,5 +1115,279 @@ describe('侧栏布局', () => {
     // 自绘滚动条仍然占位，但宽度固定在 12px（原来是系统给的 15px）
     const docSection = (await sectionBox('.sidebar-section'))!
     expect(docSection.scrollbarWidth).toBeLessThanOrEqual(12)
+  })
+})
+
+/**
+ * 章节。放在最后：这个 describe 会导入一本新的书并切换当前文档，
+ * 前面的用例对文档数量与当前文档有断言。
+ */
+describe('章节', () => {
+  /** 每章：1 个标题 + 10 段正文。所以第 c 章（从 1 数）的标题在第 (c-1)*11 段 */
+  const BODY_PER_CHAPTER = 10
+  const SEG_PER_CHAPTER = BODY_PER_CHAPTER + 1
+  const TOTAL = 5
+  const chapterHeadSeg = (c: number): number => (c - 1) * SEG_PER_CHAPTER
+
+  const chapterFileName = 'chapters.txt'
+
+  const scrollTop = (): Promise<number> =>
+    page.evaluate(() => Math.round(document.querySelector('.reader-scroll')?.scrollTop ?? -1))
+
+  /** 视口顶部所在的段落序号 —— 章节断言一律比段号，不比纵坐标 */
+  const topSegment = (): Promise<number> =>
+    page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')
+      if (!container) return -1
+      const top = container.scrollTop + 8
+      for (const element of document.querySelectorAll<HTMLElement>('[data-seg]')) {
+        if (element.offsetTop + element.offsetHeight > top) {
+          return Number(element.getAttribute('data-seg'))
+        }
+      }
+      return -1
+    })
+
+  const chapterName = async (): Promise<string> =>
+    (await page.locator('.chapter-name').textContent()) ?? ''
+  const chapterPos = async (): Promise<string> =>
+    (await page.locator('.chapter-pos').textContent()) ?? ''
+
+  /** 每个用例自己保证目录是开着的，不依赖上一个用例的收尾状态 */
+  const openToc = async (): Promise<void> => {
+    if ((await page.locator('.chapter-list').count()) === 0) {
+      await page.getByRole('button', { name: '目录', exact: true }).click()
+      await page.waitForSelector('.chapter-list')
+    }
+  }
+
+  const openDocs = async (): Promise<void> => {
+    if ((await page.locator('.doc-list').count()) === 0) {
+      await page.getByRole('button', { name: '文档', exact: true }).click()
+      await page.waitForSelector('.doc-list')
+    }
+  }
+
+  const clickChapter = async (title: string): Promise<void> => {
+    await openToc()
+    await page.locator('.chapter-item', { hasText: title }).first().click()
+    await expect.poll(chapterName).toBe(title)
+  }
+
+  it('导入一本有章节的书，目录里章数与标题都正确', async () => {
+    const parts: string[] = []
+    for (let c = 1; c <= TOTAL; c++) {
+      parts.push(`第${c}章 第${c}段故事`)
+      for (let p = 1; p <= BODY_PER_CHAPTER; p++) {
+        parts.push(`这是第${c}章的第${p}段正文，写长一点，让每一章都比一屏更高，上下章跳转才有可见的效果。`)
+      }
+    }
+    const file = join(exportDir, chapterFileName)
+    await writeFile(file, `${parts.join('\n')}\n`, 'utf-8')
+    await app.evaluate(({ dialog }, target) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+    }, file)
+    await page.getByRole('button', { name: '打开 TXT' }).click()
+
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe('chapters')
+    // 章节栏出现，且显示第 1 章
+    await page.waitForSelector('.chapter-nav')
+    await openToc()
+    await expect.poll(async () => page.locator('.chapter-item').count()).toBe(TOTAL)
+    expect(await page.locator('.chapter-item-title').allTextContents()).toEqual([
+      '第1章 第1段故事',
+      '第2章 第2段故事',
+      '第3章 第3段故事',
+      '第4章 第4段故事',
+      '第5章 第5段故事'
+    ])
+  })
+
+  it('目录里的每一章都标了字数，点它能跳过去', async () => {
+    await openToc()
+    expect(await page.locator('.chapter-item-meta').first().textContent()).toMatch(/\d[\d,]* 字符/)
+
+    const before = await scrollTop()
+    await clickChapter('第4章 第4段故事')
+
+    // 顶端对齐：视口顶部正好是第 4 章的标题段
+    expect(await topSegment()).toBe(chapterHeadSeg(4))
+    expect(await scrollTop()).toBeGreaterThan(before)
+    expect(await chapterPos()).toBe(`4 / ${TOTAL}`)
+    // 目录高亮跟着走
+    expect(await page.locator('.chapter-item.active .chapter-item-title').textContent()).toBe('第4章 第4段故事')
+  })
+
+  it('「下一章」到下一章开头，「上一章」回到本章开头', async () => {
+    await clickChapter('第2章 第2段故事')
+    expect(await topSegment()).toBe(chapterHeadSeg(2))
+
+    await page.getByRole('button', { name: '下一章', exact: true }).click()
+    await expect.poll(topSegment).toBe(chapterHeadSeg(3))
+    expect(await chapterName()).toBe('第3章 第3段故事')
+
+    await page.getByRole('button', { name: '上一章', exact: true }).click()
+    await expect.poll(topSegment).toBe(chapterHeadSeg(2))
+    expect(await chapterName()).toBe('第2章 第2段故事')
+  })
+
+  it('«上一章» 在章中间时先回本章开头，再按一次才去上一章', async () => {
+    await clickChapter('第3章 第3段故事')
+
+    // 往下滚过几段，停在章中间（不跨章）
+    await page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')
+      if (container) container.scrollTop += 400
+    })
+    await expect.poll(topSegment).toBeGreaterThan(chapterHeadSeg(3))
+    const mid = await topSegment()
+
+    // 第一次：回到本章开头，而不是直接跳走
+    await page.getByRole('button', { name: '上一章', exact: true }).click()
+    await expect.poll(topSegment).toBe(chapterHeadSeg(3))
+    expect(await chapterName()).toBe('第3章 第3段故事')
+    expect(mid).toBeGreaterThan(chapterHeadSeg(3))
+
+    // 第二次：已经在开头了，这才去上一章
+    await page.getByRole('button', { name: '上一章', exact: true }).click()
+    await expect.poll(topSegment).toBe(chapterHeadSeg(2))
+  })
+
+  it('章首时「上一章」不可点，章尾时「下一章」不可点', async () => {
+    await clickChapter('第1章 第1段故事')
+    expect(await page.getByRole('button', { name: '上一章', exact: true }).isDisabled()).toBe(true)
+    expect(await page.getByRole('button', { name: '下一章', exact: true }).isDisabled()).toBe(false)
+
+    // 滚到第 1 章中段，「上一章」应该可以点了（回本章开头是有意义的）
+    await page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')
+      if (container) container.scrollTop += 400
+    })
+    await expect.poll(async () => page.getByRole('button', { name: '上一章', exact: true }).isDisabled()).toBe(false)
+
+    await clickChapter(`第${TOTAL}章 第${TOTAL}段故事`)
+    expect(await page.getByRole('button', { name: '下一章', exact: true }).isDisabled()).toBe(true)
+  })
+
+  it('快捷键 [ 和 ] 也能翻章', async () => {
+    await clickChapter('第1章 第1段故事')
+    await page.locator('.reader-body').click({ position: { x: 40, y: 40 } })
+
+    await page.keyboard.press(']')
+    await expect.poll(topSegment).toBe(chapterHeadSeg(2))
+
+    await page.keyboard.press(']')
+    await expect.poll(topSegment).toBe(chapterHeadSeg(3))
+
+    await page.keyboard.press('[')
+    await expect.poll(topSegment).toBe(chapterHeadSeg(2))
+  })
+
+  it('在输入框里按 [ 不翻章', async () => {
+    await clickChapter('第2章 第2段故事')
+    await page.getByRole('button', { name: '搜索', exact: true }).click()
+    await page.locator('.search-input').fill('正文')
+    await page.locator('.search-input').press('[')
+    // 输入框里的 [ 应该进到输入框，而不是触发翻章
+    expect(await page.locator('.search-input').inputValue()).toContain('[')
+    expect(await topSegment()).toBe(chapterHeadSeg(2))
+    await page.getByRole('button', { name: '关闭搜索', exact: true }).click()
+  })
+
+  it('章名跟着滚动位置更新', async () => {
+    await clickChapter('第1章 第1段故事')
+    expect(await chapterName()).toBe('第1章 第1段故事')
+
+    // 直接滚到底：最后一章比一屏高，视口顶部必然落在最后一章里
+    await page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')
+      if (container) container.scrollTop = container.scrollHeight - container.clientHeight
+    })
+    await expect.poll(chapterName).toBe(`第${TOTAL}章 第${TOTAL}段故事`)
+    expect(await chapterPos()).toBe(`${TOTAL} / ${TOTAL}`)
+
+    // 回顶：书名下面那一段不属于任何一章，显示「卷首」
+    await page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')
+      if (container) container.scrollTop = 0
+    })
+    await expect.poll(chapterName).toBe('第1章 第1段故事')
+  })
+
+  it('章尾有「本章完」分隔线，且它没有嵌进段落里', async () => {
+    // 5 章 → 4 条分隔线（第一章前面不需要）
+    expect(await page.locator('.chapter-divider').count()).toBe(TOTAL - 1)
+    expect(await page.locator('.chapter-divider').first().textContent()).toBe('本章完')
+
+    // ★ 防回归：分隔线必须是 [data-seg] 段落的兄弟节点。
+    // 一旦有人把它挪进段落，selection.ts 的 textNodeOf() 会取到非文本节点，
+    // 那个段落的所有高亮与跳转会静默失效。
+    //
+    // 这个坑隐蔽的地方在于：它**只影响章标题那一小段**（最不可能被标注的位置），
+    // 其它用例全都发现不了 —— 所以这条结构断言是唯一的防线，必须逐条查。
+    const structure = await page.evaluate(() =>
+      [...document.querySelectorAll('.chapter-divider')].map((divider) => ({
+        nested: divider.closest('[data-seg]') !== null,
+        parent: divider.parentElement?.className ?? ''
+      }))
+    )
+    expect(structure).toHaveLength(TOTAL - 1)
+    for (const item of structure) {
+      expect(item.nested).toBe(false)
+      expect(item.parent).toBe('reader-body')
+    }
+
+    // 不让选区端点落在它上面，否则整个选区会被丢弃
+    expect(
+      await page.evaluate(
+        () => getComputedStyle(document.querySelector('.chapter-divider') as Element).userSelect
+      )
+    ).toBe('none')
+  })
+
+  it('有分隔线的情况下，划词收藏的位置依然准确', async () => {
+    // 第 2 章的第一段正文在 seg 12。能选中并正确回填，就说明
+    // 分隔线没有打乱「段落序号 ⇄ 全文偏移」这套换算。
+    //
+    // 先把这段滚进视口：浮动工具条是按选区矩形定位的，
+    // 选区在屏幕外时工具条也会落在屏幕外（真实使用中选不中屏幕外的字，
+    // 所以这里只要把场景摆对；工具条被裁切是另一个已知问题）。
+    await page.evaluate(() => {
+      document.querySelector('[data-seg="12"]')?.scrollIntoView({ block: 'center' })
+    })
+    await collectWord(12, '第2章')
+    const group = await vocabGroup('第2章')
+
+    // 高亮的范围必须落回同一段，且文本与选中一致
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const highlights = (CSS as unknown as { highlights?: Map<string, Set<Range>> }).highlights
+          const highlight = highlights?.get('inkpick-vocab')
+          const range = highlight ? [...highlight][0] : undefined
+          if (!range) return null
+          const node = range.startContainer
+          const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+          return { text: range.toString(), seg: element?.closest('[data-seg]')?.getAttribute('data-seg') }
+        })
+      )
+      .toEqual({ text: '第2章', seg: '12' })
+
+    // 上下文取的是所在句，不会取到隔壁章去
+    expect(await group.locator('.occurrence-context').first().textContent()).toContain('这是第2章的第1段正文')
+  })
+
+  it('没有章节标记的书：章节栏隐藏，目录标签不可点', async () => {
+    await openDocs()
+    await page.locator('.doc-item', { hasText: '示例 · On Reading' }).first().click()
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe('示例 · On Reading')
+
+    // 识别不出章节时整个功能消失，而不是给一堆垃圾章节
+    expect(await page.locator('.chapter-nav').count()).toBe(0)
+    expect(await page.locator('.chapter-divider').count()).toBe(0)
+    expect(await page.getByRole('button', { name: '目录', exact: true }).isDisabled()).toBe(true)
+
+    // 正文照常可读
+    expect(await page.locator('[data-seg]').count()).toBeGreaterThan(3)
   })
 })

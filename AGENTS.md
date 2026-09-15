@@ -103,6 +103,28 @@ pointerdown 到了、pointerup 永远不来）。
 E2E 里拖拽路径也要留在窗口内，而且不要用 `page.viewportSize()`（Electron 里是 null）
 算边界，要用 `window.innerWidth`。
 
+### 不要破坏 offset ⇄ DOM 的那套前提
+
+`selection.ts` 依赖两个强假设，破坏了不会报错，只会让标注静默错位：
+
+1. **每个 `[data-seg]` 段落里恰好只有一个文本节点** ——
+   `textNodeOf()` 取 `segEl.firstChild` 并要求它是 `Text`。
+   所以：高亮用 CSS Custom Highlight API 而不是插 `<mark>`；
+   任何要插进正文的元素（如章尾分隔线）**必须是段落的兄弟节点**。
+   这个坑隐蔽在于它只影响被插入的那几段 —— 章尾分隔线嵌进段落时，
+   **只有章标题那一段**会失去高亮，而那是最不可能被标注的位置，
+   其它用例全都发现不了。所以 E2E 里专门有一条**结构断言**守着它。
+2. **段内不含换行** —— 段落由 `splitParagraphs` 按行切出，所以每段渲染出来正好一个文本节点。
+
+### 断言要 poll，不要裸读
+
+**踩过的假失败**：`expect(await width()).toBe(200)` 这种裸读，
+在拖拽（pointermove 属于连续事件，React 会批处理）之后大约**一半概率**读到旧值。
+所以：
+
+- 与状态变更相关的断言用 `expect.poll(...)`，不要 `expect(await ...)`
+- 滚动相关要等滚动停下来（见下文）
+
 ### E2E 里的滚动与坐标
 
 - Chromium 的 `mouse.wheel` 是**带惯性动画**的。动画未停就设置 `scrollTop`，

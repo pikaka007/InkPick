@@ -474,6 +474,52 @@ ul {
   opacity: 0.4;
 }
 
+/* ---------- 侧栏目录 ---------- */
+
+.chapter-list {
+  margin-top: 2px;
+}
+
+.chapter-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius, 8px) var(--radius, 8px) 0;
+  text-align: left;
+}
+
+.chapter-item:hover {
+  background: var(--hover);
+}
+
+.chapter-item.active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.chapter-item-title {
+  font-size: 13px;
+  line-height: 1.4;
+  /* 标题长度不定，超出就省略，不要撑宽侧栏 */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-item-meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .annotation {
   display: flex;
   align-items: flex-start;
@@ -838,6 +884,67 @@ ul {
 
 /* ---------- 阅读控制条 ---------- */
 
+/*
+ * 章节导航。紧跟在书名后面 —— 它是「我在哪儿」的一部分，
+ * 跟右侧那堆「怎么显示」的控件不是一类东西。
+ */
+.chapter-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  max-width: 42%;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--panel);
+}
+
+.chapter-step {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.chapter-step:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.chapter-step:disabled {
+  color: var(--text-dim);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.chapter-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.chapter-name {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.chapter-pos {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .reader-tools {
   display: flex;
   align-items: center;
@@ -978,6 +1085,32 @@ ul {
   /* 字号与行高继承 .reader-body，不在这里写死 */
   white-space: pre-wrap;
   cursor: text;
+}
+
+/*
+ * 章尾分隔线。
+ * - user-select: none 是必需的：选区端点落在它上面时
+ *   rangeToOffsets() 找不到 [data-seg]，会把整个选区丢弃
+ * - 它必须是 <p data-seg> 的兄弟节点，不能嵌进段落里（见 Reader.tsx 的注释）
+ */
+.chapter-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 2.2em 0 1.6em;
+  color: var(--text-dim);
+  font-size: 0.72em;
+  letter-spacing: 0.3em;
+  user-select: none;
+  cursor: default;
+}
+
+.chapter-divider::before,
+.chapter-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 /* ---------- 选中工具栏 ---------- */

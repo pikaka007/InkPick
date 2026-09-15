@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { resolveAnchor } from '@core/anchor'
+import { detectChapters } from '@core/chapters'
 import {
   annotationsToMarkdown,
   libraryFileName,
@@ -10,6 +11,7 @@ import {
 } from '@core/export'
 import { DEFAULT_SIDEBAR_WIDTH, clampSidebarWidth } from '@core/prefs'
 import { indexOfAnnotation } from '@core/store'
+import { splitParagraphs } from '@core/text'
 import { groupVocab } from '@core/vocab'
 import type { Annotation, Doc } from '@core/types'
 import Reader from '@renderer/components/Reader'
@@ -83,6 +85,28 @@ export default function App(): JSX.Element {
   const visibleAnnotations = scope === 'all' ? store.annotations : docAnnotations
   const docTitles = Object.fromEntries(store.docs.map((item) => [item.id, item.title]))
 
+  /**
+   * 段落只切一次，章节与正文渲染共用这一份。
+   * 如果两处各切一次，章节的 segStart 和渲染的 data-seg 序号就可能对不上 ——
+   * 而这种不一致不会报错，只会让「跳到第 12 章」跳错地方。
+   */
+  const segments = useMemo(() => (doc ? splitParagraphs(doc.content) : []), [doc])
+  const chapters = useMemo(() => detectChapters(segments, doc?.content.length ?? 0), [segments, doc])
+
+  /** 当前读到第几章。由 Reader 上报（它才知道视口顶部在哪），侧栏目录靠它高亮 */
+  const [chapterIndex, setChapterIndex] = useState(-1)
+
+  /** 点目录：复用现成的 jump 通道，只是换成「顶端对齐 + 立即」 */
+  const handleJumpChapter = useCallback(
+    (index: number): void => {
+      const chapter = chapters[index]
+      if (!chapter) return
+      setActiveAnnotationId(null)
+      setJump({ start: chapter.start, end: chapter.start, nonce: Date.now(), kind: 'chapter' })
+    },
+    [chapters]
+  )
+
   const handleProgress = useCallback(
     (offset: number) => {
       if (currentDocId) saveProgress(currentDocId, offset)
@@ -100,12 +124,13 @@ export default function App(): JSX.Element {
 
     if (annotation.docId !== currentDocId) selectDoc(annotation.docId)
     setActiveAnnotationId(annotation.id)
-    setJump({ start: resolved.start, end: resolved.end, nonce: Date.now() })
+    setJump({ start: resolved.start, end: resolved.end, nonce: Date.now(), kind: 'annotation' })
   }
 
   const handleDocChange = (docId: string): void => {
     setJump(null)
     setActiveAnnotationId(null)
+    setChapterIndex(-1)
     selectDoc(docId)
   }
 
@@ -262,6 +287,8 @@ export default function App(): JSX.Element {
             <Sidebar
               docs={store.docs}
               currentDocId={currentDocId}
+              chapters={chapters}
+              chapterIndex={chapterIndex}
               annotations={visibleAnnotations}
               docTitles={docTitles}
               showSource={scope === 'all'}
@@ -273,6 +300,7 @@ export default function App(): JSX.Element {
               onRenameDoc={renameDocById}
               onDeleteDoc={(doc) => void handleDeleteDoc(doc)}
               onJump={handleJump}
+              onJumpChapter={handleJumpChapter}
               onRemove={handleRemoveAnnotation}
               onSetDefinition={setManualDefinition}
               onEditNote={updateNote}
@@ -298,12 +326,15 @@ export default function App(): JSX.Element {
           <Reader
             key={doc.id}
             doc={doc}
+            segments={segments}
+            chapters={chapters}
             annotations={docAnnotations}
             jump={jump}
             initialOffset={store.progress[doc.id]?.start ?? 0}
             onAddVocab={(range: OffsetRange, term: string) => addVocab(range, term)}
             onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
             onProgress={handleProgress}
+            onChapterChange={setChapterIndex}
             onNotify={notify}
             prefs={prefs}
             onPrefsChange={updatePrefs}

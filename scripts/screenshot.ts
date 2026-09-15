@@ -132,6 +132,44 @@ for (let i = 1; i <= 14; i++) {
 await page.waitForTimeout(300)
 await shoot('sidebar-with-scrollbar')
 
+// 章节：目录 + 章头导航 + 章尾分隔线
+const chapterDir = join(userDataDir, 'novel')
+await mkdir(chapterDir, { recursive: true })
+const chapterFile = join(chapterDir, 'novel.txt')
+const parts: string[] = []
+for (let c = 1; c <= 12; c++) {
+  parts.push(`第${c}章 ${['重生', '试探', '旧事', '夜行', '重逢', '离别', '归途', '风起'][c % 8]}`)
+  for (let p = 1; p <= 8; p++) {
+    parts.push(
+      '　　他站在门口，看着远处的灯火，心里想的是另一件事。风从巷口吹过来，带着一点潮湿的味遒。'
+    )
+  }
+}
+await writeFile(chapterFile, `${parts.join('\n')}\n`, 'utf-8')
+await app.evaluate(({ dialog }, target) => {
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+}, chapterFile)
+await page.getByRole('button', { name: '打开 TXT' }).click()
+await page.waitForSelector('.chapter-nav')
+await page.waitForTimeout(200)
+await shoot('chapters-reader')
+
+// 目录面板
+await page.getByRole('button', { name: '目录', exact: true }).click()
+await page.waitForSelector('.chapter-list')
+await page.waitForTimeout(200)
+await shoot('chapters-toc')
+
+// 章尾分隔线：跳到第 2 章，往回滚一点就能看到「本章完」
+await page.locator('.chapter-item').nth(1).click()
+await page.waitForTimeout(200)
+await page.evaluate(() => {
+  const container = document.querySelector('.reader-scroll')
+  if (container) container.scrollTop -= 260
+})
+await page.waitForTimeout(200)
+await shoot('chapter-divider')
+
 await app.close()
 await rm(userDataDir, { recursive: true, force: true })
 console.log(`\n完成，产物在 ${OUT_DIR}`)
