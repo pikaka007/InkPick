@@ -19,11 +19,13 @@ interface SidebarProps {
   onScopeChange: (scope: 'doc' | 'all') => void
   activeAnnotationId: string | null
   onOpen: () => void
-  onLoadSample: () => void
   onSelectDoc: (docId: string) => void
+  onRenameDoc: (docId: string, title: string) => void
+  onDeleteDoc: (doc: Doc) => void
   onJump: (annotation: Annotation) => void
   onRemove: (id: string) => void
   onSetDefinition: (annotationIds: string[], definition: string) => void
+  onEditNote: (id: string, content: string) => void
   onExport: (kind: 'vocab' | 'notes') => void
 }
 
@@ -43,17 +45,24 @@ export default function Sidebar({
   onScopeChange,
   activeAnnotationId,
   onOpen,
-  onLoadSample,
   onSelectDoc,
+  onRenameDoc,
+  onDeleteDoc,
   onJump,
   onRemove,
   onSetDefinition,
+  onEditNote,
   onExport
 }: SidebarProps): JSX.Element {
   const [filter, setFilter] = useState<Filter>('all')
   /** 正在补释义的分组 key */
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  /** 正在重命名的文档 id */
+  const [renamingDocId, setRenamingDocId] = useState<string | null>(null)
+  /** 正在编辑的笔记 id 与草稿 */
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
 
   const vocabGroups = groupVocab(annotations)
   const notes = annotations.filter((item) => item.type === 'note')
@@ -76,6 +85,27 @@ export default function Sidebar({
     setDraft('')
   }
 
+  /**
+   * 提交重命名。拿 renamingDocId 本身当幂等锁：
+   * 回车提交后 input 卸载会再触发一次 blur，不能提交两次
+   */
+  const commitRename = (docId: string, title: string): void => {
+    if (renamingDocId !== docId) return
+    setRenamingDocId(null)
+    onRenameDoc(docId, title)
+  }
+
+  const startEditingNote = (note: Annotation): void => {
+    setEditingNoteId(note.id)
+    setNoteDraft(note.content ?? '')
+  }
+
+  const submitNote = (id: string): void => {
+    if (editingNoteId !== id) return
+    setEditingNoteId(null)
+    onEditNote(id, noteDraft)
+  }
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -84,26 +114,56 @@ export default function Sidebar({
           <button type="button" onClick={onOpen}>
             打开 TXT
           </button>
-          <button type="button" className="ghost" onClick={onLoadSample}>
-            示例
-          </button>
         </div>
       </div>
 
       <section className="sidebar-section">
         <h2>文档</h2>
-        {docs.length === 0 && <p className="empty">还没有文档，点「打开 TXT」或「示例」。</p>}
+        {docs.length === 0 && <p className="empty">还没有文档，点「打开 TXT」选一个文本文件。</p>}
         <ul className="doc-list">
           {docs.map((doc) => (
             <li key={doc.id}>
-              <button
-                type="button"
-                className={doc.id === currentDocId ? 'doc-item active' : 'doc-item'}
-                onClick={() => onSelectDoc(doc.id)}
-              >
-                <span className="doc-title">{doc.title}</span>
-                <span className="doc-meta">{doc.content.length.toLocaleString()} 字符</span>
-              </button>
+              {renamingDocId === doc.id ? (
+                <input
+                  className="doc-rename"
+                  autoFocus
+                  defaultValue={doc.title}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') commitRename(doc.id, event.currentTarget.value)
+                    if (event.key === 'Escape') setRenamingDocId(null)
+                  }}
+                  onBlur={(event) => commitRename(doc.id, event.currentTarget.value)}
+                />
+              ) : (
+                <div className="doc-row">
+                  <button
+                    type="button"
+                    className={doc.id === currentDocId ? 'doc-item active' : 'doc-item'}
+                    onClick={() => onSelectDoc(doc.id)}
+                  >
+                    <span className="doc-title">{doc.title}</span>
+                    <span className="doc-meta">{doc.content.length.toLocaleString()} 字符</span>
+                  </button>
+                  <div className="doc-actions">
+                    <button
+                      type="button"
+                      title="重命名"
+                      aria-label={`重命名 ${doc.title}`}
+                      onClick={() => setRenamingDocId(doc.id)}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      type="button"
+                      title="删除文档"
+                      aria-label={`删除 ${doc.title}`}
+                      onClick={() => onDeleteDoc(doc)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -254,19 +314,52 @@ export default function Sidebar({
           {showNotes &&
             notes.map((note) => (
               <li key={note.id} className={note.id === activeAnnotationId ? 'annotation active' : 'annotation'}>
-                <button type="button" className="annotation-main" onClick={() => onJump(note)}>
-                  <span className="badge note">记</span>
-                  <span className="annotation-text">
-                    <strong>{note.content}</strong>
-                    <em>{note.contextText || note.anchor.text}</em>
-                    {showSource && docTitles[note.docId] && (
-                      <span className="occurrence-source">{docTitles[note.docId]}</span>
-                    )}
-                  </span>
-                </button>
-                <button type="button" className="annotation-remove" title="删除" onClick={() => onRemove(note.id)}>
-                  ×
-                </button>
+                {editingNoteId === note.id ? (
+                  <div className="note-editor">
+                    <textarea
+                      autoFocus
+                      value={noteDraft}
+                      onChange={(event) => setNoteDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') setEditingNoteId(null)
+                        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submitNote(note.id)
+                      }}
+                    />
+                    <div className="note-editor-actions">
+                      <button type="button" className="ghost" onClick={() => setEditingNoteId(null)}>
+                        取消
+                      </button>
+                      <button type="button" onClick={() => submitNote(note.id)} disabled={!noteDraft.trim()}>
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button type="button" className="annotation-main" onClick={() => onJump(note)}>
+                      <span className="badge note">记</span>
+                      <span className="annotation-text">
+                        <strong>{note.content}</strong>
+                        <em>{note.contextText || note.anchor.text}</em>
+                        {showSource && docTitles[note.docId] && (
+                          <span className="occurrence-source">{docTitles[note.docId]}</span>
+                        )}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="annotation-edit"
+                      title="编辑笔记"
+                      aria-label="编辑笔记"
+                      onClick={() => startEditingNote(note)}
+                    >
+                      ✎
+                    </button>
+                    <button type="button" className="annotation-remove" title="删除" onClick={() => onRemove(note.id)}>
+                      ×
+                    </button>
+                  </>
+                )}
               </li>
             ))}
         </ul>

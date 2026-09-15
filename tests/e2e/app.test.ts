@@ -37,6 +37,30 @@ async function lastSuggestedName(): Promise<string> {
   return app.evaluate(() => (globalThis as unknown as { __inkpickSuggested?: string }).__inkpickSuggested ?? '')
 }
 
+/** 把原生确认框换成固定回答，并记下它收到的文案 */
+async function stubConfirm(response: 0 | 1): Promise<void> {
+  await app.evaluate(({ dialog }, value) => {
+    const store = globalThis as unknown as { __inkpickConfirm?: unknown }
+    dialog.showMessageBox = (async (options: unknown) => {
+      store.__inkpickConfirm = options
+      return { response: value, checkboxChecked: false }
+    }) as unknown as typeof dialog.showMessageBox
+  }, response)
+}
+
+interface ConfirmOptionsSeen {
+  message?: string
+  detail?: string
+  buttons?: string[]
+  defaultId?: number
+}
+
+async function lastConfirmOptions(): Promise<ConfirmOptionsSeen> {
+  return app.evaluate(
+    () => (globalThis as unknown as { __inkpickConfirm?: ConfirmOptionsSeen }).__inkpickConfirm ?? {}
+  )
+}
+
 /** 导出被取消的场景 */
 async function stubSaveDialogCanceled(): Promise<void> {
   await app.evaluate(({ dialog }) => {
@@ -463,6 +487,103 @@ describe('阅读体验', () => {
   })
 })
 
+describe('文档管理', () => {
+  it('可以重命名文档', async () => {
+    await page.getByRole('button', { name: '重命名 second-book' }).click()
+    await page.locator('.doc-rename').fill('第二本书')
+    await page.keyboard.press('Enter')
+
+    await expect.poll(async () => page.locator('.doc-title').allTextContents()).toContain('第二本书')
+    expect(await page.locator('.doc-rename').count()).toBe(0)
+  })
+
+  it('取消删除时什么都不会发生', async () => {
+    await stubConfirm(1)
+    await page.getByRole('button', { name: '删除 第二本书' }).click()
+
+    const options = await lastConfirmOptions()
+    // 必须写清会连带删掉多少东西
+    expect(options.detail).toContain('1 条标注')
+    expect(options.detail).toContain('不可撤销')
+    expect(options.buttons?.[0]).toBe('删除')
+    // 默认与 Esc 都停在「取消」上，随手回车不该删数据
+    expect(options.defaultId).toBe(1)
+
+    expect(await page.locator('.doc-item').count()).toBe(2)
+  })
+
+  it('确认删除后级联清掉它的标注', async () => {
+    await stubConfirm(0)
+    await page.getByRole('button', { name: '删除 第二本书' }).click()
+
+    await expect.poll(async () => page.locator('.doc-item').count()).toBe(1)
+    expect(await page.locator('.toast').textContent()).toContain('已删除《第二本书》和 1 条标注')
+
+    // 当前打开的示例文档不受影响
+    expect(await page.locator('.reader-header h1').textContent()).toBe('示例 · On Reading')
+  })
+
+  it('跨文档视图下已删文档的标注不会再冒出来', async () => {
+    await page.getByRole('button', { name: '全部文档' }).click()
+
+    const group = await vocabGroup('word')
+    await expect.poll(async () => group.locator('.occurrence').count()).toBe(2)
+
+    // 出处标签里不应再出现已删的那本书
+    const sources = await group.locator('.occurrence-source').allTextContents()
+    expect(sources).toEqual(['示例 · On Reading', '示例 · On Reading'])
+
+    await page.getByRole('button', { name: '本文件' }).click()
+  })
+})
+
+describe('删除标注可以撤销', () => {
+  it('删完弹出带撤销按钮的提示', async () => {
+    const inkpick = await vocabGroup('InkPick')
+    await inkpick.locator('.annotation-remove').click()
+
+    await expect.poll(async () => page.locator('.vocab-group').count()).toBe(2)
+    expect(await page.locator('.toast-action').textContent()).toBe('撤销')
+  })
+
+  it('点撤销后标注回到原来的位置', async () => {
+    await page.locator('.toast-action').click()
+
+    await expect.poll(async () => page.locator('.vocab-group').count()).toBe(3)
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('已恢复')
+
+    // 手写释义跟着一起回来，说明恢复的是完整对象而不是重建的
+    const inkpick = await vocabGroup('InkPick')
+    expect(await inkpick.locator('.vocab-definition').textContent()).toBe('这个阅读器本身')
+  })
+})
+
+describe('笔记可以编辑', () => {
+  it('点编辑后带着现有内容进入编辑态', async () => {
+    await page.getByRole('button', { name: '编辑笔记' }).click()
+
+    await page.waitForSelector('.note-editor textarea')
+    expect(await page.locator('.note-editor textarea').inputValue()).toBe('这句是关键')
+  })
+
+  it('Esc 取消后内容不变', async () => {
+    await page.locator('.note-editor textarea').fill('改了但不保存')
+    await page.keyboard.press('Escape')
+
+    await expect.poll(async () => page.locator('.note-editor').count()).toBe(0)
+    expect(await page.locator('.annotation strong').textContent()).toBe('这句是关键')
+  })
+
+  it('保存后内容真的改了', async () => {
+    await page.getByRole('button', { name: '编辑笔记' }).click()
+    await page.locator('.note-editor textarea').fill('这句概括了整本书')
+    await page.getByRole('button', { name: '保存' }).click()
+
+    await expect.poll(async () => page.locator('.note-editor').count()).toBe(0)
+    expect(await page.locator('.annotation strong').textContent()).toBe('这句概括了整本书')
+  })
+})
+
 describe('看', () => {
   it('点某一次收藏能跳回原文，并标出当前位置', async () => {
     const group = await vocabGroup('word')
@@ -512,8 +633,12 @@ describe('存', () => {
       }[]
     }
 
-    expect(persisted.docs).toHaveLength(2)
-    expect(persisted.annotations).toHaveLength(5)
+    expect(persisted.docs).toHaveLength(1)
+    expect(persisted.annotations).toHaveLength(4)
+
+    const note = persisted.annotations.find((item) => item.type === 'note')
+    // 笔记已被删，这里只剩词条；上面已断言总数为 4
+    expect(note).toBeUndefined()
 
     const words = persisted.annotations.find((item) => item.term === 'words')
     expect(words?.lookupStatus).toBe('found')

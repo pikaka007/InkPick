@@ -8,13 +8,20 @@ import {
   suggestedFileName,
   vocabToAnkiCsv
 } from '@core/export'
+import { indexOfAnnotation } from '@core/store'
 import { groupVocab } from '@core/vocab'
-import type { Annotation } from '@core/types'
+import type { Annotation, Doc } from '@core/types'
 import Reader from '@renderer/components/Reader'
 import type { JumpTarget } from '@renderer/components/Reader'
 import Sidebar from '@renderer/components/Sidebar'
 import { flushSave, useAppStore } from '@renderer/state'
 import type { OffsetRange } from '@renderer/state'
+
+interface ToastState {
+  message: string
+  /** 只有「可撤销」的提示才带动作按钮 */
+  action?: { label: string; run: () => void }
+}
 
 export default function App(): JSX.Element {
   const ready = useAppStore((state) => state.ready)
@@ -27,6 +34,10 @@ export default function App(): JSX.Element {
   const addVocab = useAppStore((state) => state.addVocab)
   const addNote = useAppStore((state) => state.addNote)
   const removeAnnotationById = useAppStore((state) => state.removeAnnotationById)
+  const removeDocById = useAppStore((state) => state.removeDocById)
+  const renameDocById = useAppStore((state) => state.renameDocById)
+  const restoreAnnotation = useAppStore((state) => state.restoreAnnotation)
+  const updateNote = useAppStore((state) => state.updateNote)
   const setManualDefinition = useAppStore((state) => state.setManualDefinition)
   const saveProgress = useAppStore((state) => state.saveProgress)
   const updatePrefs = useAppStore((state) => state.updatePrefs)
@@ -39,15 +50,18 @@ export default function App(): JSX.Element {
 
   const [jump, setJump] = useState<JumpTarget | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<ToastState | null>(null)
   /** 单词本/笔记列表看的是当前文档还是全部文档 */
   const [scope, setScope] = useState<'doc' | 'all'>('doc')
 
   useEffect(() => {
     if (!toast) return
-    const timer = setTimeout(() => setToast(null), 2600)
+    // 带撤销按钮的提示多留一会儿，否则来不及点
+    const timer = setTimeout(() => setToast(null), toast.action ? 6000 : 2600)
     return () => clearTimeout(timer)
   }, [toast])
+
+  const notify = useCallback((message: string) => setToast({ message }), [])
 
   useEffect(() => {
     void init()
@@ -94,11 +108,56 @@ export default function App(): JSX.Element {
   }
 
   /**
+   * 删除单条标注：**不弹确认框**，改成给一次撤销机会。
+   * 确认框只能防误点，撤销能拯救所有手滑，而且不会打断流程。
+   */
+  const handleRemoveAnnotation = (id: string): void => {
+    const index = indexOfAnnotation(store, id)
+    const annotation = store.annotations[index]
+    if (!annotation) return
+
+    removeAnnotationById(id)
+    setToast({
+      message: annotation.type === 'vocab' ? '已删除 1 条词条' : '已删除 1 条笔记',
+      action: {
+        label: '撤销',
+        run: () => {
+          restoreAnnotation(annotation, index)
+          setToast({ message: '已恢复' })
+        }
+      }
+    })
+  }
+
+  /** 删除文档：不可逆且代价大，弹原生确认框，并写清会连带删掉什么 */
+  const handleDeleteDoc = async (doc: Doc): Promise<void> => {
+    const count = store.annotations.filter((item) => item.docId === doc.id).length
+
+    const confirmed = await window.api.confirmAction({
+      title: '删除文档',
+      message: `删除《${doc.title}》？`,
+      detail:
+        count > 0
+          ? `会同时删除这个文档里的 ${count} 条标注和阅读进度。\n此操作不可撤销。`
+          : '会同时删除它的阅读进度。此操作不可撤销。',
+      confirmLabel: '删除'
+    })
+    if (!confirmed) return
+
+    removeDocById(doc.id)
+    setJump(null)
+    setActiveAnnotationId(null)
+    setToast({
+      message: count > 0 ? `已删除《${doc.title}》和 ${count} 条标注` : `已删除《${doc.title}》`
+    })
+  }
+
+  /**
    * 导出范围跟侧栏一致：本文件就只有当前文档，全部就是所有文档。
    */
   const handleExport = async (kind: 'vocab' | 'notes'): Promise<void> => {
     if (visibleAnnotations.length === 0) {
-      setToast('还没有可导出的标注')
+      setToast({ message: '还没有可导出的标注' })
       return
     }
     if (scope === 'doc' && !doc) return
@@ -117,9 +176,9 @@ export default function App(): JSX.Element {
 
     try {
       const saved = await window.api.saveTextFile(fileName, content)
-      setToast(saved ? `已导出到 ${saved}` : '已取消导出')
+      setToast({ message: saved ? `已导出到 ${saved}` : '已取消导出' })
     } catch (error) {
-      setToast(`导出失败：${error instanceof Error ? error.message : String(error)}`)
+      setToast({ message: `导出失败：${error instanceof Error ? error.message : String(error)}` })
     }
   }
 
@@ -139,11 +198,13 @@ export default function App(): JSX.Element {
         onScopeChange={setScope}
         activeAnnotationId={activeAnnotationId}
         onOpen={() => void openDocument()}
-        onLoadSample={loadSample}
         onSelectDoc={handleDocChange}
+        onRenameDoc={renameDocById}
+        onDeleteDoc={(doc) => void handleDeleteDoc(doc)}
         onJump={handleJump}
-        onRemove={removeAnnotationById}
+        onRemove={handleRemoveAnnotation}
         onSetDefinition={setManualDefinition}
+        onEditNote={updateNote}
         onExport={(kind) => void handleExport(kind)}
       />
 
@@ -157,7 +218,7 @@ export default function App(): JSX.Element {
           onAddVocab={(range: OffsetRange, term: string) => addVocab(range, term)}
           onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
           onProgress={handleProgress}
-          onNotify={setToast}
+          onNotify={notify}
           prefs={prefs}
           onPrefsChange={updatePrefs}
         />
@@ -181,7 +242,16 @@ export default function App(): JSX.Element {
         </main>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && (
+        <div className="toast">
+          <span>{toast.message}</span>
+          {toast.action && (
+            <button type="button" className="toast-action" onClick={toast.action.run}>
+              {toast.action.label}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

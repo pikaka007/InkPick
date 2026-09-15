@@ -18,6 +18,7 @@
 | **跨书** | 同一个词在不同书里收过，自动合并成一条词条，并标出各自出处 |
 | **补** | 词典没收录的词可以手写一句释义 |
 | **带走** | 导出 Anki CSV（背单词） / Markdown（词表 + 笔记） |
+| **管** | 文档可重命名 / 删除（级联清掉它的标注）；误删标注可一键撤销；笔记可编辑 |
 | **存** | 本地 JSON 持久化，重启不丢 |
 
 范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)；**还缺什么、缺到什么程度，见 [`docs/ROADMAP.md`](docs/ROADMAP.md)**；
@@ -39,8 +40,8 @@ npm 11 会为此打一条 `Unknown project config` 警告，可忽略。
 ## 常用命令
 
 ```bash
-npm test             # 单元测试（Vitest，197 个）
-npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，30 个，会先构建）
+npm test             # 单元测试（Vitest，211 个）
+npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，39 个，会先构建）
 npm run typecheck    # 类型检查
 npm run build        # 构建到 out/
 npm start            # 预览构建产物

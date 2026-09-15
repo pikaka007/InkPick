@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { normalizeContent } from '../core/text'
-import type { ImportedDocument } from '../core/api'
+import type { ConfirmOptions, ImportedDocument } from '../core/api'
 import { dictionaryStatus, lookupWord } from './dictionary'
 import { readStoreFile, storeFilePath, writeStoreFile } from './storeFile'
 
@@ -96,6 +96,21 @@ function registerIpc(): void {
   ipcMain.handle('dict:lookup', async (_event, word: string) => lookupWord(word))
 
   ipcMain.handle('dict:status', async () => dictionaryStatus())
+
+  ipcMain.handle('dialog:confirm', async (_event, options: ConfirmOptions): Promise<boolean> => {
+    const result = await dialog.showMessageBox({
+      type: 'warning',
+      title: options.title,
+      message: options.message,
+      detail: options.detail,
+      buttons: [options.confirmLabel ?? '确定', '取消'],
+      // 默认与 Esc 都停在「取消」上 —— 随手回车不应该把数据删掉
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true
+    })
+    return result.response === 0
+  })
 
   ipcMain.handle(
     'file:save-text',

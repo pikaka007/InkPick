@@ -3,6 +3,7 @@
  * 持久化由 shell 负责（当前实现：main 进程写单个 JSON 文件，见 src/main/storeFile.ts）。
  */
 import type { Anchor, Annotation, AnnotationType, Doc, Store } from './types'
+import { clamp } from './text'
 import { DEFAULT_PREFS, normalizePrefs } from './prefs'
 import type { ReaderPrefs } from './prefs'
 
@@ -18,6 +19,34 @@ export function createId(): string {
 
 export function addDoc(store: Store, doc: Doc): Store {
   return { ...store, docs: [...store.docs, doc] }
+}
+
+/**
+ * 删除文档，**级联清掉它的标注与阅读进度**。
+ * 不做级联的话会留下一堆指向已删文档的孤儿标注，在「全部文档」视图里变成幽灵条目。
+ */
+export function removeDoc(store: Store, docId: string): Store {
+  const docs = store.docs.filter((doc) => doc.id !== docId)
+  if (docs.length === store.docs.length) return store
+
+  return {
+    ...store,
+    docs,
+    annotations: store.annotations.filter((annotation) => annotation.docId !== docId),
+    progress: Object.fromEntries(Object.entries(store.progress).filter(([id]) => id !== docId)),
+    // 删的正好是当前文档时，退到还剩下的第一本
+    lastDocId: store.lastDocId === docId ? docs[0]?.id : store.lastDocId
+  }
+}
+
+/** 重命名。不接受空标题 —— 空标题会让文档在侧栏里变成一条看不见的东西 */
+export function renameDoc(store: Store, docId: string, title: string): Store {
+  const trimmed = title.trim()
+  if (!trimmed) return store
+  return {
+    ...store,
+    docs: store.docs.map((doc) => (doc.id === docId ? { ...doc, title: trimmed } : doc))
+  }
 }
 
 export function getDoc(store: Store, docId: string): Doc | undefined {
@@ -67,6 +96,22 @@ export function updateAnnotation(
 
 export function removeAnnotation(store: Store, id: string): Store {
   return { ...store, annotations: store.annotations.filter((a) => a.id !== id) }
+}
+
+/**
+ * 把标注插回原来的位置 —— 给「删除后撤销」用。
+ * 保留原 id，所以任何引用仍然有效；已经存在时直接返回（幂等）。
+ */
+export function insertAnnotationAt(store: Store, annotation: Annotation, index: number): Store {
+  if (store.annotations.some((item) => item.id === annotation.id)) return store
+  const annotations = [...store.annotations]
+  annotations.splice(clamp(index, 0, annotations.length), 0, annotation)
+  return { ...store, annotations }
+}
+
+/** 删除前先找出它在列表里的位置，撤销时才能放回原处 */
+export function indexOfAnnotation(store: Store, id: string): number {
+  return store.annotations.findIndex((item) => item.id === id)
 }
 
 export function annotationsForDoc(store: Store, docId: string): Annotation[] {

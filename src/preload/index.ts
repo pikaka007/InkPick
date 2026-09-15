@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DictionaryStatus, ImportedDocument, InkPickApi } from '../core/api'
+import type { ConfirmOptions, DictionaryStatus, ImportedDocument, InkPickApi } from '../core/api'
 import type { LookupResult } from '../core/dictionary'
 
 /** 暴露给渲染进程的全部能力 */
@@ -11,6 +11,7 @@ const api: InkPickApi = {
   dictionaryStatus: () => ipcRenderer.invoke('dict:status') as Promise<DictionaryStatus>,
   saveTextFile: (suggestedName: string, content: string) =>
     ipcRenderer.invoke('file:save-text', suggestedName, content) as Promise<string | null>,
+  confirmAction: (options: ConfirmOptions) => ipcRenderer.invoke('dialog:confirm', options) as Promise<boolean>,
   onBeforeClose: (handler: () => void) => {
     ipcRenderer.on('app:before-close', () => handler())
   },

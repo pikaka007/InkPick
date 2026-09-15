@@ -11,7 +11,10 @@ import {
   createId,
   deserializeStore,
   getDoc,
+  insertAnnotationAt,
   removeAnnotation,
+  removeDoc,
+  renameDoc,
   serializeStore,
   setPrefs,
   setProgress,
@@ -56,6 +59,12 @@ interface AppState {
   addVocab: (range: OffsetRange, term: string) => void
   addNote: (range: OffsetRange, content: string) => void
   removeAnnotationById: (id: string) => void
+  /** 删除文档，级联清掉它的标注与进度 */
+  removeDocById: (docId: string) => void
+  renameDocById: (docId: string, title: string) => void
+  /** 撤销删除：把标注插回原来的位置 */
+  restoreAnnotation: (annotation: Annotation, index: number) => void
+  updateNote: (id: string, content: string) => void
   setManualDefinition: (annotationIds: string[], definition: string) => void
   /** 查词并回填。查不到也正常，不回滚标注 */
   lookupAndPatch: (term: string, annotationIds: string[]) => Promise<void>
@@ -170,6 +179,25 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     removeAnnotationById: (id) => commit((store) => removeAnnotation(store, id)),
+
+    removeDocById: (docId) => {
+      const next = removeDoc(get().store, docId)
+      commit(() => next, {
+        // 删的正好是正在看的这本时，跟着切到还剩下的那本
+        currentDocId: get().currentDocId === docId ? (next.lastDocId ?? null) : get().currentDocId
+      })
+    },
+
+    renameDocById: (docId, title) => commit((store) => renameDoc(store, docId, title)),
+
+    restoreAnnotation: (annotation, index) =>
+      commit((store) => insertAnnotationAt(store, annotation, index)),
+
+    updateNote: (id, content) => {
+      const trimmed = content.trim()
+      if (!trimmed) return
+      patchAnnotations([id], { content: trimmed })
+    },
 
     setManualDefinition: (annotationIds, definition) => {
       patchAnnotations(annotationIds, { manualDefinition: definition.trim() })
