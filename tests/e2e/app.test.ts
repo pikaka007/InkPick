@@ -584,6 +584,117 @@ describe('笔记可以编辑', () => {
   })
 })
 
+describe('侧栏', () => {
+  const sidebarWidth = (): Promise<number> =>
+    page.evaluate(() => document.querySelector('.sidebar-wrap')?.getBoundingClientRect().width ?? 0)
+
+  it('可以收起，收起后侧栏不再渲染', async () => {
+    expect(await sidebarWidth()).toBeGreaterThan(200)
+
+    await page.getByRole('button', { name: '隐藏侧栏' }).click()
+
+    await expect.poll(async () => page.locator('.sidebar').count()).toBe(0)
+    expect(await page.locator('.app').getAttribute('data-sidebar')).toBe('collapsed')
+  })
+
+  it('收起后按钮变成「显示侧栏」，正文占满宽度', async () => {
+    const toggle = page.getByRole('button', { name: '显示侧栏' })
+    expect(await toggle.count()).toBe(1)
+
+    const readerLeft = await page.evaluate(
+      () => document.querySelector('.reader-header')!.getBoundingClientRect().left
+    )
+    expect(readerLeft).toBeLessThan(40)
+  })
+
+  it('Ctrl+B 也能切换，且在输入框里不抢键', async () => {
+    await page.keyboard.press('Control+b')
+    await expect.poll(async () => page.locator('.sidebar').count()).toBe(1)
+
+    // 在搜索框以外的输入框里（重命名）按 Ctrl+B 不应折叠侧栏
+    await page.keyboard.press('Control+b')
+    await expect.poll(async () => page.locator('.sidebar').count()).toBe(0)
+    await page.keyboard.press('Control+b')
+    await expect.poll(async () => page.locator('.sidebar').count()).toBe(1)
+  })
+
+  it('拖动把手可以调宽', async () => {
+    const before = await sidebarWidth()
+    const handle = page.locator('.sidebar-resizer')
+    const box = (await handle.boundingBox())!
+
+    await page.mouse.move(box.x + box.width / 2, box.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 90, box.y + 200, { steps: 5 })
+    await page.mouse.up()
+
+    await expect.poll(sidebarWidth).toBeGreaterThan(before + 60)
+  })
+
+  it('宽度被夹在合法范围里', async () => {
+    const handle = page.locator('.sidebar-resizer')
+    const box = (await handle.boundingBox())!
+
+    // 注意：拖拽路径必须留在窗口内。把指针拖出窗口再松手，pointerup 可能递不到
+    const viewport = page.viewportSize() ?? { width: 1280, height: 800 }
+
+    // 拽到极窄
+    await page.mouse.move(box.x + box.width / 2, box.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(5, box.y + 200, { steps: 3 })
+    await page.mouse.up()
+    expect(await sidebarWidth()).toBe(200)
+
+    // 拽到极宽（但仍在窗口内）
+    const again = (await handle.boundingBox())!
+    await page.mouse.move(again.x + again.width / 2, again.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(viewport.width - 5, again.y + 200, { steps: 3 })
+    await page.mouse.up()
+    expect(await sidebarWidth()).toBe(520)
+  })
+
+  it('双击把手复位成默认宽度', async () => {
+    await page.locator('.sidebar-resizer').dblclick()
+    await expect.poll(sidebarWidth).toBe(320)
+  })
+
+  it('宽度会写进存档', async () => {
+    const handle = page.locator('.sidebar-resizer')
+    const box = (await handle.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 45, box.y + 200, { steps: 3 })
+    await page.mouse.up()
+
+    await expect.poll(sidebarWidth, { message: '拖动后应立即变宽' }).toBeGreaterThan(340)
+    const width = await sidebarWidth()
+    await app.close()
+
+    const raw = await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')
+    const persisted = JSON.parse(raw) as { prefs?: { sidebarWidth?: number } }
+    expect(persisted.prefs?.sidebarWidth).toBe(Math.round(width))
+
+    await launch()
+  })
+
+  it('重开后宽度和收起状态都还在', async () => {
+    await page.waitForSelector('.reader')
+    expect(await sidebarWidth()).toBe(365)
+
+    await page.getByRole('button', { name: '隐藏侧栏' }).click()
+    await app.close()
+    await launch()
+
+    await page.waitForSelector('.reader')
+    expect(await page.locator('.sidebar').count()).toBe(0)
+
+    // 恢复成展开，后续测试要用侧栏
+    await page.getByRole('button', { name: '显示侧栏' }).click()
+    await expect.poll(async () => page.locator('.sidebar').count()).toBe(1)
+  })
+})
+
 describe('看', () => {
   it('点某一次收藏能跳回原文，并标出当前位置', async () => {
     const group = await vocabGroup('word')

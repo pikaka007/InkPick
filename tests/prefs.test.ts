@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PREFS,
+  DEFAULT_SIDEBAR_WIDTH,
   FONT_SIZES,
   LINE_HEIGHTS,
   MEASURES,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
   THEMES,
+  clampSidebarWidth,
   formatPercent,
   nearestFontSize,
   nearestLineHeight,
@@ -84,8 +88,50 @@ describe('normalizePrefs', () => {
   })
 
   it('合法值原样保留', () => {
-    const prefs = normalizePrefs({ fontSize: 24, lineHeight: 2.1, measure: 'wide', theme: 'dark' })
-    expect(prefs).toEqual({ fontSize: 24, lineHeight: 2.1, measure: 'wide', theme: 'dark' })
+    const prefs = normalizePrefs({
+      fontSize: 24,
+      lineHeight: 2.1,
+      measure: 'wide',
+      theme: 'dark',
+      sidebarWidth: 400,
+      sidebarCollapsed: true
+    })
+    expect(prefs).toEqual({
+      fontSize: 24,
+      lineHeight: 2.1,
+      measure: 'wide',
+      theme: 'dark',
+      sidebarWidth: 400,
+      sidebarCollapsed: true
+    })
+  })
+
+  it('缺失的侧栏偏好补默认值', () => {
+    const prefs = normalizePrefs({ fontSize: 19 })
+    expect(prefs.sidebarWidth).toBe(DEFAULT_SIDEBAR_WIDTH)
+    expect(prefs.sidebarCollapsed).toBe(false)
+  })
+
+  it('未收起以外的真值不当成 true', () => {
+    expect(normalizePrefs({ sidebarCollapsed: 'yes' as never }).sidebarCollapsed).toBe(false)
+    expect(normalizePrefs({ sidebarCollapsed: 1 as never }).sidebarCollapsed).toBe(false)
+  })
+})
+
+describe('侧栏宽度', () => {
+  it('夹到合法范围', () => {
+    expect(clampSidebarWidth(100)).toBe(SIDEBAR_MIN_WIDTH)
+    expect(clampSidebarWidth(9999)).toBe(SIDEBAR_MAX_WIDTH)
+    expect(clampSidebarWidth(360)).toBe(360)
+  })
+
+  it('非法值退到默认宽度', () => {
+    expect(clampSidebarWidth(Number.NaN)).toBe(DEFAULT_SIDEBAR_WIDTH)
+    expect(clampSidebarWidth(Number.POSITIVE_INFINITY)).toBe(DEFAULT_SIDEBAR_WIDTH)
+  })
+
+  it('取整，避免出现小数像素宽度', () => {
+    expect(clampSidebarWidth(320.7)).toBe(321)
   })
 })
 

@@ -20,6 +20,7 @@ import { applyHighlight, clearHighlight, highlightSupported } from '@renderer/hi
 import { elementAtOffset, rangeForOffsets, rangeToOffsets, segmentStarts } from '@renderer/selection'
 import type { OffsetRange } from '@renderer/selection'
 import ProgressBar from './ProgressBar'
+import SidebarToggle from './SidebarToggle'
 
 export interface JumpTarget extends OffsetRange {
   nonce: number
@@ -43,6 +44,8 @@ interface ReaderProps {
   onNotify: (message: string) => void
   prefs: ReaderPrefs
   onPrefsChange: (patch: Partial<ReaderPrefs>) => void
+  sidebarCollapsed: boolean
+  onToggleSidebar: () => void
 }
 
 function clearDomSelection(): void {
@@ -59,7 +62,9 @@ export default function Reader({
   onProgress,
   onNotify,
   prefs,
-  onPrefsChange
+  onPrefsChange,
+  sidebarCollapsed,
+  onToggleSidebar
 }: ReaderProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -222,6 +227,8 @@ export default function Reader({
         </div>
 
         <div className="reader-tools">
+          <SidebarToggle collapsed={sidebarCollapsed} onToggle={onToggleSidebar} />
+
           <button
             type="button"
             className="tool"

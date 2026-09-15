@@ -8,12 +8,14 @@ import {
   suggestedFileName,
   vocabToAnkiCsv
 } from '@core/export'
+import { DEFAULT_SIDEBAR_WIDTH, clampSidebarWidth } from '@core/prefs'
 import { indexOfAnnotation } from '@core/store'
 import { groupVocab } from '@core/vocab'
 import type { Annotation, Doc } from '@core/types'
 import Reader from '@renderer/components/Reader'
 import type { JumpTarget } from '@renderer/components/Reader'
 import Sidebar from '@renderer/components/Sidebar'
+import SidebarToggle from '@renderer/components/SidebarToggle'
 import { flushSave, useAppStore } from '@renderer/state'
 import type { OffsetRange } from '@renderer/state'
 
@@ -182,65 +184,146 @@ export default function App(): JSX.Element {
     }
   }
 
+  /** 拖宽时先只改本地状态，松手才写存档 —— 否则每次 pointermove 都会触发一次落盘 */
+  const [dragWidth, setDragWidth] = useState<number | null>(null)
+  const [dragging, setDragging] = useState(false)
+
+  /**
+   * 拖拽把手。
+   *
+   * 用窗口级监听而不是 setPointerCapture：捕获一旦在前一次拖拽里没释放干净，
+   * 后续 pointermove / pointerup 会直接收不到（实测踩过），换来的就只是一个
+   * 同样能实现的功能，但不会坏在状态残留上。
+   */
+  const startDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return
+    event.preventDefault()
+
+    const start = { x: event.clientX, width: sidebarWidth }
+    let latest: number | null = null
+    setDragging(true)
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      // 用「起点 + 位移」而不是绝对坐标，跟窗口位置、缩放无关
+      latest = clampSidebarWidth(start.width + (moveEvent.clientX - start.x))
+      setDragWidth(latest)
+    }
+
+    const finish = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      setDragging(false)
+      setDragWidth(null)
+      // 没动过就不提交，否则单击一下也会写一次存档
+      if (latest !== null) updatePrefs({ sidebarWidth: latest })
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+  }
+
+  const sidebarWidth = dragWidth ?? prefs.sidebarWidth
+
+  // Ctrl/⌘+B 折叠侧栏。在输入框里不抢这个键
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'b') return
+      const target = event.target as HTMLElement | null
+      if (target && /^(input|textarea)$/i.test(target.tagName)) return
+      event.preventDefault()
+      updatePrefs({ sidebarCollapsed: !useAppStore.getState().store.prefs.sidebarCollapsed })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [updatePrefs])
+
   if (!ready) {
     return <div className="boot">加载中…</div>
   }
 
-  return (
-    <div className="app">
-      <Sidebar
-        docs={store.docs}
-        currentDocId={currentDocId}
-        annotations={visibleAnnotations}
-        docTitles={docTitles}
-        showSource={scope === 'all'}
-        scope={scope}
-        onScopeChange={setScope}
-        activeAnnotationId={activeAnnotationId}
-        onOpen={() => void openDocument()}
-        onSelectDoc={handleDocChange}
-        onRenameDoc={renameDocById}
-        onDeleteDoc={(doc) => void handleDeleteDoc(doc)}
-        onJump={handleJump}
-        onRemove={handleRemoveAnnotation}
-        onSetDefinition={setManualDefinition}
-        onEditNote={updateNote}
-        onExport={(kind) => void handleExport(kind)}
-      />
+  const toggleSidebar = (): void => updatePrefs({ sidebarCollapsed: !prefs.sidebarCollapsed })
 
-      {doc ? (
-        <Reader
-          key={doc.id}
-          doc={doc}
-          annotations={docAnnotations}
-          jump={jump}
-          initialOffset={store.progress[doc.id]?.start ?? 0}
-          onAddVocab={(range: OffsetRange, term: string) => addVocab(range, term)}
-          onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
-          onProgress={handleProgress}
-          onNotify={notify}
-          prefs={prefs}
-          onPrefsChange={updatePrefs}
-        />
-      ) : (
-        <main className="welcome">
-          <h1>InkPick</h1>
-          <p>一边读，一边把词和想法钉在原文上。</p>
-          <div className="welcome-actions">
-            <button type="button" onClick={() => void openDocument()}>
-              打开一个 TXT
-            </button>
-            <button type="button" className="ghost" onClick={loadSample}>
-              先看看示例
-            </button>
+  return (
+    <div className="app" data-sidebar={prefs.sidebarCollapsed ? 'collapsed' : 'expanded'}>
+      {!prefs.sidebarCollapsed && (
+        <>
+          <div className="sidebar-wrap" style={{ width: sidebarWidth }}>
+            <Sidebar
+              docs={store.docs}
+              currentDocId={currentDocId}
+              annotations={visibleAnnotations}
+              docTitles={docTitles}
+              showSource={scope === 'all'}
+              scope={scope}
+              onScopeChange={setScope}
+              activeAnnotationId={activeAnnotationId}
+              onOpen={() => void openDocument()}
+              onSelectDoc={handleDocChange}
+              onRenameDoc={renameDocById}
+              onDeleteDoc={(doc) => void handleDeleteDoc(doc)}
+              onJump={handleJump}
+              onRemove={handleRemoveAnnotation}
+              onSetDefinition={setManualDefinition}
+              onEditNote={updateNote}
+              onExport={(kind) => void handleExport(kind)}
+            />
           </div>
-          <ol className="welcome-steps">
-            <li>打开文本，滚动阅读</li>
-            <li>选中一段文字 → 收藏单词 或 写笔记</li>
-            <li>左侧列表随时点回原文那句</li>
-          </ol>
-        </main>
+
+          {/* 命中区域 10px，靠负边距叠在边界上，不占布局宽度 */}
+          <div
+            className={dragging ? 'sidebar-resizer dragging' : 'sidebar-resizer'}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整侧栏宽度"
+            title="拖动调整宽度，双击复位"
+            onPointerDown={startDrag}
+            onDoubleClick={() => updatePrefs({ sidebarWidth: DEFAULT_SIDEBAR_WIDTH })}
+          />
+        </>
       )}
+
+      <div className="main">
+        {doc ? (
+          <Reader
+            key={doc.id}
+            doc={doc}
+            annotations={docAnnotations}
+            jump={jump}
+            initialOffset={store.progress[doc.id]?.start ?? 0}
+            onAddVocab={(range: OffsetRange, term: string) => addVocab(range, term)}
+            onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
+            onProgress={handleProgress}
+            onNotify={notify}
+            prefs={prefs}
+            onPrefsChange={updatePrefs}
+            sidebarCollapsed={prefs.sidebarCollapsed}
+            onToggleSidebar={toggleSidebar}
+          />
+        ) : (
+          <main className="welcome">
+            <div className="welcome-toggle">
+              <SidebarToggle collapsed={prefs.sidebarCollapsed} onToggle={toggleSidebar} />
+            </div>
+            <h1>InkPick</h1>
+            <p>一边读，一边把词和想法钉在原文上。</p>
+            <div className="welcome-actions">
+              <button type="button" onClick={() => void openDocument()}>
+                打开一个 TXT
+              </button>
+              <button type="button" className="ghost" onClick={loadSample}>
+                先看看示例
+              </button>
+            </div>
+            <ol className="welcome-steps">
+              <li>打开文本，滚动阅读</li>
+              <li>选中一段文字 → 收藏单词 或 写笔记</li>
+              <li>左侧列表随时点回原文那句</li>
+            </ol>
+          </main>
+        )}
+      </div>
 
       {toast && (
         <div className="toast">

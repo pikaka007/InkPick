@@ -109,6 +109,51 @@ button.ghost:hover {
   height: 100%;
 }
 
+.main {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+/* ---------- 侧栏宽度 ---------- */
+
+.sidebar-wrap {
+  flex: none;
+  height: 100%;
+  min-width: 0;
+}
+
+.sidebar-wrap .sidebar {
+  width: 100%;
+  min-width: 0;
+}
+
+.sidebar-resizer {
+  flex: none;
+  width: 10px;
+  /* 叠在边界上，不占布局宽度 */
+  margin-left: -5px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.dragging {
+  background: var(--accent-soft);
+}
+
+.sidebar-toggle {
+  flex: none;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.welcome-toggle {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+}
+
 .boot {
   display: flex;
   align-items: center;
@@ -884,6 +929,7 @@ ul {
 /* ---------- 空状态 ---------- */
 
 .welcome {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;

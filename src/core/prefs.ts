@@ -18,6 +18,10 @@ export interface ReaderPrefs {
   /** 行宽档位 */
   measure: Measure
   theme: Theme
+  /** 侧栏宽度，px */
+  sidebarWidth: number
+  /** 侧栏是否收起来 */
+  sidebarCollapsed: boolean
 }
 
 /* ---------- 档位 ---------- */
@@ -37,11 +41,21 @@ export const MEASURE_WIDTHS: Record<Measure, string> = {
 export const MEASURE_LABELS: Record<Measure, string> = { narrow: '窄', medium: '中', wide: '宽' }
 export const THEME_LABELS: Record<Theme, string> = { light: '浅色', sepia: '护眼', dark: '深色' }
 
+/* ---------- 侧栏 ---------- */
+
+/** 再窄就放不下文档标题和引用原文了 */
+export const SIDEBAR_MIN_WIDTH = 200
+/** 再宽就抢正文的地方了 */
+export const SIDEBAR_MAX_WIDTH = 520
+export const DEFAULT_SIDEBAR_WIDTH = 320
+
 export const DEFAULT_PREFS: ReaderPrefs = {
   fontSize: 19,
   lineHeight: 1.85,
   measure: 'medium',
-  theme: 'light'
+  theme: 'light',
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+  sidebarCollapsed: false
 }
 
 /* ---------- 操作 ---------- */
@@ -78,6 +92,12 @@ export function nearestLineHeight(value: number): number {
   return best
 }
 
+/** 把宽度夹到合法范围。非法值（NaN / 负 / 巨大）退到默认宽度 */
+export function clampSidebarWidth(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_SIDEBAR_WIDTH
+  return Math.round(clamp(value, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH))
+}
+
 /** 把可能来自旧数据 / 手改文件的值收敛到合法范围 */
 export function normalizePrefs(input: Partial<ReaderPrefs> | undefined): ReaderPrefs {
   const prefs = input ?? {}
@@ -85,7 +105,11 @@ export function normalizePrefs(input: Partial<ReaderPrefs> | undefined): ReaderP
     fontSize: nearestFontSize(typeof prefs.fontSize === 'number' ? prefs.fontSize : DEFAULT_PREFS.fontSize),
     lineHeight: nearestLineHeight(typeof prefs.lineHeight === 'number' ? prefs.lineHeight : DEFAULT_PREFS.lineHeight),
     measure: MEASURES.includes(prefs.measure as Measure) ? (prefs.measure as Measure) : DEFAULT_PREFS.measure,
-    theme: THEMES.includes(prefs.theme as Theme) ? (prefs.theme as Theme) : DEFAULT_PREFS.theme
+    theme: THEMES.includes(prefs.theme as Theme) ? (prefs.theme as Theme) : DEFAULT_PREFS.theme,
+    sidebarWidth: clampSidebarWidth(
+      typeof prefs.sidebarWidth === 'number' ? prefs.sidebarWidth : DEFAULT_PREFS.sidebarWidth
+    ),
+    sidebarCollapsed: prefs.sidebarCollapsed === true
   }
 }
 
