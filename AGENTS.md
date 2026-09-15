@@ -38,6 +38,12 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 
 - 主分支：`main`；远程：`origin` → https://github.com/pikaka007/InkPick.git
 - **每完成一个 commit 都要 `git push` 到 `origin/main`**，不要留在本地。
+- **推送可能因网络失败，要重试。** 实测 `github.com:443` 间歇性不可达（同一会话内有时通有时断，
+  报 `Failed to connect to github.com port 443`）。失败时的正确做法：
+  - 重试 3~5 次，间隔几秒；多数情况能过
+  - 判断是否真的没推上去用 `git log --oneline origin/main..HEAD | wc -l`，
+    **不要靠管道后的退出码**（`git push | tail` 的退出码是 `tail` 的，会把失败当成功）
+  - 推送失败**不算代码问题**，但必须在汇报里说明「已提交未推送」
 - 未经用户明确要求，**不要** `git push --force`、`git reset --hard`、改写已推送历史。
 - 提交前检查 `git status`，确认没有误提交敏感信息（密钥、`.env`、本地配置）。
 - 大体积的第三方数据（如 ECDICT 全量 CSV）不入库：放 `.dict-src/`（已在 .gitignore），
