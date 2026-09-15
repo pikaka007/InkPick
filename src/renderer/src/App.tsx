@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import { resolveAnchor } from '@core/anchor'
-import { annotationsToMarkdown, suggestedFileName, vocabToAnkiCsv } from '@core/export'
+import {
+  annotationsToMarkdown,
+  libraryFileName,
+  libraryToMarkdown,
+  suggestedFileName,
+  vocabToAnkiCsv
+} from '@core/export'
 import { groupVocab } from '@core/vocab'
 import type { Annotation } from '@core/types'
 import Reader from '@renderer/components/Reader'
@@ -27,6 +33,8 @@ export default function App(): JSX.Element {
   const [jump, setJump] = useState<JumpTarget | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  /** 单词本/笔记列表看的是当前文档还是全部文档 */
+  const [scope, setScope] = useState<'doc' | 'all'>('doc')
 
   useEffect(() => {
     if (!toast) return
@@ -48,7 +56,9 @@ export default function App(): JSX.Element {
   }, [])
 
   const doc = currentDocId ? (store.docs.find((item) => item.id === currentDocId) ?? null) : null
-  const annotations = currentDocId ? store.annotations.filter((item) => item.docId === currentDocId) : []
+  const docAnnotations = currentDocId ? store.annotations.filter((item) => item.docId === currentDocId) : []
+  const visibleAnnotations = scope === 'all' ? store.annotations : docAnnotations
+  const docTitles = Object.fromEntries(store.docs.map((item) => [item.id, item.title]))
 
   const handleProgress = useCallback(
     (offset: number) => {
@@ -57,10 +67,15 @@ export default function App(): JSX.Element {
     [currentDocId, saveProgress]
   )
 
+  /** 点标注：如果它属于另一本书，先切过去 */
   const handleJump = (annotation: Annotation): void => {
-    if (!doc) return
-    const resolved = resolveAnchor(doc.content, annotation.anchor)
+    const target = store.docs.find((item) => item.id === annotation.docId)
+    if (!target) return
+
+    const resolved = resolveAnchor(target.content, annotation.anchor)
     if (!resolved) return
+
+    if (annotation.docId !== currentDocId) selectDoc(annotation.docId)
     setActiveAnnotationId(annotation.id)
     setJump({ start: resolved.start, end: resolved.end, nonce: Date.now() })
   }
@@ -72,22 +87,27 @@ export default function App(): JSX.Element {
   }
 
   /**
-   * 导出范围跟侧栏一致：只导出当前文档的标注。
-   * 跨文档合并导出（把所有书的生词并成一本）是后续项，见 docs/MVP.md。
+   * 导出范围跟侧栏一致：本文件就只有当前文档，全部就是所有文档。
    */
   const handleExport = async (kind: 'vocab' | 'notes'): Promise<void> => {
-    if (!doc) return
-    if (annotations.length === 0) {
-      setToast('这个文档还没有标注')
+    if (visibleAnnotations.length === 0) {
+      setToast('还没有可导出的标注')
       return
     }
+    if (scope === 'doc' && !doc) return
 
     const content =
       kind === 'vocab'
-        ? vocabToAnkiCsv(groupVocab(annotations), doc.title)
-        : annotationsToMarkdown(annotations, doc)
+        ? vocabToAnkiCsv(groupVocab(visibleAnnotations), docTitles)
+        : scope === 'doc'
+          ? annotationsToMarkdown(visibleAnnotations, doc!)
+          : libraryToMarkdown(store.docs, visibleAnnotations)
 
-    const fileName = suggestedFileName(doc.title, kind, kind === 'vocab' ? 'csv' : 'md')
+    const fileName =
+      scope === 'doc'
+        ? suggestedFileName(doc!.title, kind, kind === 'vocab' ? 'csv' : 'md')
+        : libraryFileName(kind, kind === 'vocab' ? 'csv' : 'md')
+
     try {
       const saved = await window.api.saveTextFile(fileName, content)
       setToast(saved ? `已导出到 ${saved}` : '已取消导出')
@@ -105,7 +125,11 @@ export default function App(): JSX.Element {
       <Sidebar
         docs={store.docs}
         currentDocId={currentDocId}
-        annotations={annotations}
+        annotations={visibleAnnotations}
+        docTitles={docTitles}
+        showSource={scope === 'all'}
+        scope={scope}
+        onScopeChange={setScope}
         activeAnnotationId={activeAnnotationId}
         onOpen={() => void openDocument()}
         onLoadSample={loadSample}
@@ -120,7 +144,7 @@ export default function App(): JSX.Element {
         <Reader
           key={doc.id}
           doc={doc}
-          annotations={annotations}
+          annotations={docAnnotations}
           jump={jump}
           initialOffset={store.progress[doc.id]?.start ?? 0}
           onAddVocab={(range: OffsetRange, term: string) => addVocab(range, term)}

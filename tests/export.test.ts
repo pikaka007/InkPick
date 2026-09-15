@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { createAnchor } from '@core/anchor'
 import { parseCsvRecords } from '@core/csv'
-import { annotationsToMarkdown, csvField, csvRow, safeFileName, suggestedFileName, vocabToAnkiCsv } from '@core/export'
+import {
+  annotationsToMarkdown,
+  csvField,
+  csvRow,
+  libraryFileName,
+  libraryToMarkdown,
+  safeFileName,
+  suggestedFileName,
+  vocabToAnkiCsv
+} from '@core/export'
 import { groupVocab } from '@core/vocab'
 import type { Annotation } from '@core/types'
 
@@ -64,6 +73,7 @@ describe('csvField', () => {
 })
 
 describe('vocabToAnkiCsv', () => {
+  const TITLES = { 'doc-1': '示例 · On Reading' }
   const groups = groupVocab([
     vocab({
       term: 'Reading',
@@ -89,21 +99,21 @@ describe('vocabToAnkiCsv', () => {
   ])
 
   it('第一行是表头', () => {
-    expect(vocabToAnkiCsv(groups, '示例').split('\n')[0]).toBe('Word,Phonetic,Definition,Context,Source')
+    expect(vocabToAnkiCsv(groups, TITLES).split('\n')[0]).toBe('Word,Phonetic,Definition,Context,Source')
   })
 
   it('一个词一行，同一词的多次收藏不重复成行', () => {
-    const records = parseCsvRecords(vocabToAnkiCsv(groups, '示例'))
+    const records = parseCsvRecords(vocabToAnkiCsv(groups, TITLES))
     expect(records).toHaveLength(2)
     expect(records.map((row) => row.Word)).toEqual(['reading', 'word'])
   })
 
   it('全部义项都导出，不只界面上的前三条', () => {
-    expect(vocabToAnkiCsv(groups, '示例')).toContain('n. 阅读；n. 读物')
+    expect(vocabToAnkiCsv(groups, TITLES)).toContain('n. 阅读；n. 读物')
   })
 
   it('同一词的多次上下文合成一个多行字段', () => {
-    const records = parseCsvRecords(vocabToAnkiCsv(groups, '示例'))
+    const records = parseCsvRecords(vocabToAnkiCsv(groups, TITLES))
     const wordRow = records.find((row) => row.Word === 'word')!
 
     // word 与 words 两次收藏的上下文都在这一个字段里，各占一行
@@ -113,18 +123,18 @@ describe('vocabToAnkiCsv', () => {
   })
 
   it('带上出处书名', () => {
-    expect(vocabToAnkiCsv(groups, '示例 · On Reading')).toContain('示例 · On Reading')
+    expect(vocabToAnkiCsv(groups, TITLES)).toContain('示例 · On Reading')
   })
 
   it('没有词条时只有表头', () => {
-    expect(parseCsvRecords(vocabToAnkiCsv([], '空'))).toHaveLength(0)
+    expect(parseCsvRecords(vocabToAnkiCsv([], TITLES))).toHaveLength(0)
   })
 
   it('词典查不到但手写过释义时，导出的是手写释义', () => {
     const manual = groupVocab([
       vocab({ term: 'inkpick', start: 0, lookupStatus: 'missing', manualDefinition: '这个阅读器' })
     ])
-    expect(vocabToAnkiCsv(manual, '示例')).toContain('这个阅读器')
+    expect(vocabToAnkiCsv(manual, TITLES)).toContain('这个阅读器')
   })
 })
 
@@ -195,6 +205,73 @@ describe('annotationsToMarkdown', () => {
     )
     expect(md).toContain('（未补释义）')
   })
+})
+
+describe('跨文档（全部标注）', () => {
+  const docs = [
+    { id: 'doc-1', title: '第一本书' },
+    { id: 'doc-2', title: '第二本书' }
+  ]
+  const titles = { 'doc-1': '第一本书', 'doc-2': '第二本书' }
+
+  // 同一个词在两本书里各收一次，加一条另一本书里的词
+  const crossDoc = [
+    vocab({ term: 'word', start: 0, senses: [{ pos: 'n.', translation: '词' }] }),
+    { ...vocab({ term: 'words', lemma: 'word', start: CONTEXT.indexOf('word') }), docId: 'doc-2' },
+    { ...vocab({ term: 'habit', start: 0 }), docId: 'doc-2' }
+  ]
+  const options = { now: new Date('2026-09-15T10:00:00Z') }
+
+  it('同一词跨书合并成一行，Source 列出两本书', () => {
+    const records = parseCsvRecords(vocabToAnkiCsv(groupVocab(crossDoc), titles))
+    expect(records.map((row) => row.Word)).toEqual(['word', 'habit'])
+    expect(records[0].Source).toBe('第一本书 / 第二本书')
+    expect(records[1].Source).toBe('第二本书')
+  })
+
+  it('只有一本书时 Source 不重复堆叠', () => {
+    const single = vocabularyInOneDoc()
+    const records = parseCsvRecords(vocabToAnkiCsv(groupVocab(single), titles))
+    expect(records[0].Source).toBe('第一本书')
+  })
+
+  it('Markdown 里每条上下文标出出处，笔记按文档分节', () => {
+    const md = libraryToMarkdown(docs, [...crossDoc, note({ start: 0 })], options)
+
+    expect(md.startsWith('# InkPick 全部标注')).toBe(true)
+    expect(md).toContain('2 个文档')
+    expect(md).toContain('（第一本书）')
+    expect(md).toContain('（第二本书）')
+    expect(md).toContain('## 笔记')
+    expect(md).toContain('### 第一本书')
+  })
+
+  it('没有笔记的文档不出现在笔记小节里', () => {
+    const md = libraryToMarkdown(docs, [note({ start: 0 })], options)
+    expect(md).toContain('### 第一本书')
+    expect(md).not.toContain('### 第二本书')
+  })
+
+  it('全空时不输出空小节', () => {
+    const md = libraryToMarkdown(docs, [], options)
+    expect(md).not.toContain('## 单词')
+    expect(md).not.toContain('## 笔记')
+  })
+
+  it('没有标题的文档不会输出 undefined', () => {
+    const md = libraryToMarkdown(docs, [{ ...vocab({ term: 'word', start: 0 }), docId: 'ghost' }], options)
+    expect(md).not.toContain('undefined')
+  })
+
+  it('跨文档导出的文件名', () => {
+    expect(libraryFileName('vocab', 'csv')).toBe('InkPick-全部词表.csv')
+    expect(libraryFileName('notes', 'md')).toBe('InkPick-全部笔记.md')
+  })
+
+  /** 同一文档里收两次，用于验证 Source 不重复 */
+  function vocabularyInOneDoc(): Annotation[] {
+    return [vocab({ term: 'word', start: 0 }), { ...vocab({ term: 'habit', start: 0 }), docId: 'doc-1' }]
+  }
 })
 
 describe('文件名', () => {

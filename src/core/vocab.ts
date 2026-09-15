@@ -30,12 +30,16 @@ const STATUS_RANK: Record<LookupStatus, number> = { pending: 0, missing: 1, foun
 
 export function groupVocab(annotations: Annotation[]): VocabGroup[] {
   const groups = new Map<string, VocabGroup>()
+  /** docId → 这本书第一次被标注的顺序 */
+  const docRank = new Map<string, number>()
 
   for (const annotation of annotations) {
     if (annotation.type !== 'vocab') continue
 
     const key = groupKeyOf(annotation)
     if (!key) continue
+
+    if (!docRank.has(annotation.docId)) docRank.set(annotation.docId, docRank.size)
 
     let group = groups.get(key)
     if (!group) {
@@ -64,7 +68,12 @@ export function groupVocab(annotations: Annotation[]): VocabGroup[] {
   }
 
   for (const group of groups.values()) {
-    group.items.sort((a, b) => a.anchor.start - b.anchor.start)
+    // 先按书分组（按这本书第一次被标注的先后），组内再按原文位置。
+    // 单文档时 docRank 是常数，退化成纯位置排序。
+    group.items.sort((a, b) => {
+      const rankDiff = (docRank.get(a.docId) ?? 0) - (docRank.get(b.docId) ?? 0)
+      return rankDiff !== 0 ? rankDiff : a.anchor.start - b.anchor.start
+    })
   }
 
   // 按首次收藏的先后排，读起来跟阅读顺序一致

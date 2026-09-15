@@ -42,6 +42,19 @@ describe('groupVocab', () => {
     expect(groups[0].items.map((item) => item.anchor.start)).toEqual([0, 13])
   })
 
+  it('跨文档时先按书分组（按首次标注的先后），组内按位置', () => {
+    const inDoc = (docId: string, start: number): Annotation => ({
+      ...vocab({ term: 'runs', lemma: 'run', start }),
+      docId
+    })
+
+    const groups = groupVocab([inDoc('doc-a', 10), inDoc('doc-b', 0), inDoc('doc-a', 0)])
+
+    // doc-a 先被标注，它的两条排在一起；两本书不能交错
+    expect(groups[0].items.map((item) => item.docId)).toEqual(['doc-a', 'doc-a', 'doc-b'])
+    expect(groups[0].items.map((item) => item.anchor.start)).toEqual([0, 10, 0])
+  })
+
   it('没有 lemma 时退回 term 分组', () => {
     const groups = groupVocab([vocab({ term: 'habit', start: 0 }), vocab({ term: 'Habit', start: 8 })])
     expect(groups).toHaveLength(1)

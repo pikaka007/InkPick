@@ -10,6 +10,19 @@ import { groupDefinition, groupVocab } from './vocab'
 
 /* ---------- CSV ---------- */
 
+/** docId → 文档标题。跨文档导出时用来填出处 */
+export type DocTitles = Record<string, string>
+
+/** 一组标注涉及到的全部文档标题（按首次出现顺序去重） */
+function titlesOf(items: Annotation[], titles: DocTitles): string[] {
+  const result: string[] = []
+  for (const item of items) {
+    const title = titles[item.docId]
+    if (title && !result.includes(title)) result.push(title)
+  }
+  return result
+}
+
 /** RFC4180 转义：含逗号 / 引号 / 换行的字段加引号，内部引号翻倍 */
 export function csvField(value: string): string {
   if (!/[",\r\n]/.test(value)) return value
@@ -26,8 +39,10 @@ export function csvRow(values: string[]): string {
  *
  * 第一行是表头。Anki 导入时会自动识别并跳过；
  * 文件本身用 Excel / Numbers 打开也是自解释的。
+ *
+ * 跨文档时 `Source` 会把涉及到的书名都列出来（`A / B`）。
  */
-export function vocabToAnkiCsv(groups: VocabGroup[], sourceTitle: string): string {
+export function vocabToAnkiCsv(groups: VocabGroup[], titles: DocTitles): string {
   const header = csvRow(['Word', 'Phonetic', 'Definition', 'Context', 'Source'])
   const rows = groups.map((group) =>
     csvRow([
@@ -36,7 +51,7 @@ export function vocabToAnkiCsv(groups: VocabGroup[], sourceTitle: string): strin
       definitionOf(group),
       // 多次收藏的上下文各占一行：Anki 卡片背面看起来更清楚
       group.items.map((item) => item.contextText || item.anchor.text).join('\n'),
-      sourceTitle
+      titlesOf(group.items, titles).join(' / ')
     ])
   )
   return [header, ...rows].join('\n') + '\n'
@@ -113,6 +128,64 @@ function formLabel(item: Annotation, group: VocabGroup): string {
   return ''
 }
 
+/**
+ * 全部文档 → 一份 Markdown。
+ *
+ * 和单文档导出的区别：词条是跨书合并的，所以每条上下文要能看出自哪本书；
+ * 笔记按文档分节。
+ */
+export function libraryToMarkdown(
+  docs: Pick<Doc, 'id' | 'title'>[],
+  annotations: Annotation[],
+  options: MarkdownOptions = {}
+): string {
+  const titles: DocTitles = Object.fromEntries(docs.map((doc) => [doc.id, doc.title]))
+  const groups = groupVocab(annotations)
+  const notes = annotations.filter((item) => item.type === 'note')
+  const date = (options.now ?? new Date()).toISOString().slice(0, 10)
+
+  const lines: string[] = []
+  lines.push('# InkPick 全部标注')
+  lines.push('')
+  lines.push(
+    `> InkPick 导出 · ${date} · ${docs.length} 个文档 · ${groups.length} 条词条 / ${notes.length} 条笔记`
+  )
+
+  if (groups.length > 0) {
+    lines.push('', '## 单词', '')
+    for (const group of groups) {
+      lines.push(
+        `**${group.lemma}**${group.phonetic ? ` /${group.phonetic}/` : ''} — ${groupDefinition(group) || '（未补释义）'}`
+      )
+      lines.push('')
+      for (const item of group.items) {
+        const source = titles[item.docId]
+        lines.push(
+          `- ${formLabel(item, group)}${item.contextText || item.anchor.text}${source ? ` （${source}）` : ''}`
+        )
+      }
+      lines.push('')
+    }
+  }
+
+  if (notes.length > 0) {
+    lines.push('## 笔记', '')
+    for (const doc of docs) {
+      const docNotes = notes.filter((item) => item.docId === doc.id)
+      if (docNotes.length === 0) continue
+
+      lines.push(`### ${doc.title}`, '')
+      for (const note of docNotes) {
+        lines.push(`**${note.content ?? ''}**`, '')
+        lines.push(`> ${note.contextText || note.anchor.text}`, '')
+      }
+    }
+  }
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  return lines.join('\n') + '\n'
+}
+
 /* ---------- 文件名 ---------- */
 
 /** 去掉文件系统不接受的字符（跨平台取并集） */
@@ -129,4 +202,9 @@ export function safeFileName(input: string, fallback = 'inkpick'): string {
 export function suggestedFileName(docTitle: string, kind: 'vocab' | 'notes', extension: string): string {
   const suffix = kind === 'vocab' ? '词表' : '笔记'
   return `${safeFileName(docTitle)}-${suffix}.${extension}`
+}
+
+/** 跨文档导出时的文件名：没有单一文档标题可用 */
+export function libraryFileName(kind: 'vocab' | 'notes', extension: string): string {
+  return `InkPick-全部${kind === 'vocab' ? '词表' : '笔记'}.${extension}`
 }

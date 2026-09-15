@@ -449,6 +449,16 @@ ul {
   overflow: hidden;
 }
 
+.occurrence-source {
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 /* ---------- 阅读区 ---------- */
 
 .reader {

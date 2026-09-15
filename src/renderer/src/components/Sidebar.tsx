@@ -9,7 +9,14 @@ type Filter = 'all' | 'vocab' | 'note'
 interface SidebarProps {
   docs: Doc[]
   currentDocId: string | null
+  /** 按当前范围（本文件 / 全部）过滤过的标注 */
   annotations: Annotation[]
+  /** docId → 标题，跨文档时用来显示出处 */
+  docTitles: Record<string, string>
+  /** 是否在每条收藏上标出所属文档 */
+  showSource: boolean
+  scope: 'doc' | 'all'
+  onScopeChange: (scope: 'doc' | 'all') => void
   activeAnnotationId: string | null
   onOpen: () => void
   onLoadSample: () => void
@@ -30,6 +37,10 @@ export default function Sidebar({
   docs,
   currentDocId,
   annotations,
+  docTitles,
+  showSource,
+  scope,
+  onScopeChange,
   activeAnnotationId,
   onOpen,
   onLoadSample,
@@ -107,16 +118,22 @@ export default function Sidebar({
         </h2>
 
         <div className="filter-tabs">
-          {FILTERS.map((item) => (
-            <button
-              type="button"
-              key={item.key}
-              className={filter === item.key ? 'tab active' : 'tab'}
-              onClick={() => setFilter(item.key)}
-            >
-              {item.label}
-            </button>
-          ))}
+          <button
+            type="button"
+            className={scope === 'doc' ? 'tab active' : 'tab'}
+            disabled={!currentDocId}
+            onClick={() => onScopeChange('doc')}
+          >
+            本文件
+          </button>
+          <button
+            type="button"
+            className={scope === 'all' ? 'tab active' : 'tab'}
+            disabled={docs.length === 0}
+            onClick={() => onScopeChange('all')}
+          >
+            全部文档
+          </button>
 
           <span className="tabs-spacer" />
 
@@ -138,6 +155,19 @@ export default function Sidebar({
           >
             导出 MD
           </button>
+        </div>
+
+        <div className="filter-tabs">
+          {FILTERS.map((item) => (
+            <button
+              type="button"
+              key={item.key}
+              className={filter === item.key ? 'tab active' : 'tab'}
+              onClick={() => setFilter(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
 
         {isEmpty && <p className="empty">选中正文里的文字，就能收藏单词或写笔记。</p>}
@@ -203,6 +233,9 @@ export default function Sidebar({
                           <span className="occurrence-form">{item.term}</span>
                         )}
                         <span className="occurrence-context">{item.contextText || item.anchor.text}</span>
+                        {showSource && docTitles[item.docId] && (
+                          <span className="occurrence-source">{docTitles[item.docId]}</span>
+                        )}
                       </button>
                       <button
                         type="button"
@@ -226,6 +259,9 @@ export default function Sidebar({
                   <span className="annotation-text">
                     <strong>{note.content}</strong>
                     <em>{note.contextText || note.anchor.text}</em>
+                    {showSource && docTitles[note.docId] && (
+                      <span className="occurrence-source">{docTitles[note.docId]}</span>
+                    )}
                   </span>
                 </button>
                 <button type="button" className="annotation-remove" title="删除" onClick={() => onRemove(note.id)}>

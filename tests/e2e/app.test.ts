@@ -4,7 +4,7 @@
  * 这是 docs/MVP.md 里「验收标准」的自动化版本：
  * 攒出词表和笔记 → 能点回原文 → 关掉重开还在。
  */
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -239,6 +239,72 @@ describe('导出', () => {
   })
 })
 
+describe('跨文档单词本', () => {
+  it('可以打开第二本书', async () => {
+    // 路径要在这里算：describe 体在收集阶段就执行了，那时 exportDir 还没创建
+    const secondDocPath = join(exportDir, 'second-book.txt')
+    await writeFile(secondDocPath, 'The word appears here too. A habit of reading.\n', 'utf-8')
+    await app.evaluate(({ dialog }, target) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+    }, secondDocPath)
+
+    await page.getByRole('button', { name: '打开 TXT' }).click()
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe('second-book')
+    expect(await page.locator('.doc-item').count()).toBe(2)
+  })
+
+  it('在新书里收藏同一个词，本文件范围下只看得到这一条', async () => {
+    await collectWord(0, 'word')
+
+    const group = await vocabGroup('word')
+    await expect.poll(async () => group.locator('.occurrence').count()).toBe(1)
+    expect(await group.locator('.occurrence-source').count()).toBe(0)
+  })
+
+  it('切到「全部文档」后同一个词跨书合并成一组，并标出各自出处', async () => {
+    await page.getByRole('button', { name: '全部文档' }).click()
+
+    const group = await vocabGroup('word')
+    await expect.poll(async () => group.locator('.occurrence').count()).toBe(3)
+    expect(await group.locator('.times').textContent()).toBe('×3')
+
+    const sources = (await group.locator('.occurrence-source').allTextContents()).sort()
+    expect(sources).toEqual(['second-book', '示例 · On Reading', '示例 · On Reading'])
+  })
+
+  it('跨文档导出：Source 列出全部来源，上下文一条不丢', async () => {
+    const target = join(exportDir, 'all.csv')
+    await stubSaveDialog(target)
+
+    await page.getByRole('button', { name: '导出 CSV' }).click()
+    await expect.poll(async () => readFile(target, 'utf-8').catch(() => null)).not.toBeNull()
+
+    // 跨文档时文件名不再叫某个文档的名字
+    expect(await lastSuggestedName()).toBe('InkPick-全部词表.csv')
+
+    const records = parseCsvRecords(await readFile(target, 'utf-8'))
+    const wordRow = records.find((row) => row.Word === 'word')!
+    expect(wordRow.Source).toBe('示例 · On Reading / second-book')
+    expect(wordRow.Context.split('\n')).toHaveLength(3)
+  })
+
+  it('点另一本书的收藏会自动切过去', async () => {
+    const target = page.locator('.occurrence').filter({
+      has: page.locator('.occurrence-source:text-is("second-book")')
+    })
+    await target.first().click()
+
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe('second-book')
+    expect(await page.locator('.doc-item.active .doc-title').textContent()).toBe('second-book')
+  })
+
+  it('切回本文件范围并回到示例文档', async () => {
+    await page.getByRole('button', { name: '本文件' }).click()
+    await page.locator('.doc-item', { hasText: '示例 · On Reading' }).click()
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe('示例 · On Reading')
+  })
+})
+
 describe('看', () => {
   it('点某一次收藏能跳回原文，并标出当前位置', async () => {
     const group = await vocabGroup('word')
@@ -284,8 +350,8 @@ describe('存', () => {
       }[]
     }
 
-    expect(persisted.docs).toHaveLength(1)
-    expect(persisted.annotations).toHaveLength(4)
+    expect(persisted.docs).toHaveLength(2)
+    expect(persisted.annotations).toHaveLength(5)
 
     const words = persisted.annotations.find((item) => item.term === 'words')
     expect(words?.lookupStatus).toBe('found')
