@@ -181,6 +181,10 @@ scripts/        dict:build 词库构建脚本
   以及一段 E2E 里的 `name: '打开 TXT'`（写坏后选择器永远匹配不上，报的却是超时，很难查）。
   - 改代码 / 文档用编辑工具直接改文件
   - 需要追加长文件时，先用写文件工具生成到临时文件，再 `cat x >> y`
+  - **提交信息也要走文件**：`git commit -F 临时文件`，不要用 `git commit -m "..."`
+    或 heredoc。已踩过一次：heredoc 里的中文被写成 GBK 字节，git 只会警告
+    `commit message did not conform to UTF-8`，但信息已经存进去且**已经推送**
+    —— 代码文件是好的，只有信息变成一串乱码，而修它必须改写已推送历史（规则不允许）
   - 改动后跑 `npm run check:docs` 兜底体检
 
 ## 汇报格式
