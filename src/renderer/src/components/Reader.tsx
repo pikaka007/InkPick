@@ -430,6 +430,10 @@ export default function Reader({
       <div
         className="reader-scroll"
         ref={scrollRef}
+        /* 可聚焦：这样点一下正文后 PageUp/PageDown、方向键就能翻页。
+           隐藏了滚动条之后，键盘翻页是必要的替代手段 */
+        tabIndex={0}
+        aria-label="正文"
         onScroll={handleScroll}
         onMouseUp={handleSelection}
         onKeyUp={handleSelection}

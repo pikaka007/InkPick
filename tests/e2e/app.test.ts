@@ -378,6 +378,24 @@ describe('阅读体验', () => {
   const appBackground = (): Promise<string> =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
+  const scrollTopOfReader = (): Promise<number> =>
+    page.evaluate(() => Math.round(document.querySelector('.reader-scroll')?.scrollTop ?? -1))
+
+  /**
+   * 等滚动停下来。
+   * Chromium 的滚轮滚动带惯性动画，不等它结束的话，后面设置的 scrollTop
+   * 会被仍在运行的动画盖掉（实测踩过，表现为「置 0 之后自己跑到 30」）。
+   */
+  const waitForScrollSettled = async (): Promise<void> => {
+    let last = -1
+    for (let i = 0; i < 40; i++) {
+      const now = await scrollTopOfReader()
+      if (now === last) return
+      last = now
+      await page.waitForTimeout(50)
+    }
+  }
+
   // 设置现在全在工具栏上，不需要「关面板」了
 
   it('四组设置都在工具栏上，一次点击到位', async () => {
@@ -448,6 +466,43 @@ describe('阅读体验', () => {
     await page.getByRole('button', { name: '主题 深色' }).click()
     await expect.poll(theme).toBe('dark')
     expect(await appBackground()).not.toBe(sepia)
+  })
+
+  it('阅读区不再有原生滚动条，正文不再被它占掉宽度', async () => {
+    const metrics = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('.reader-scroll')!
+      return {
+        // 有原生滚动条时 offset - client 约等于 15
+        scrollbarWidth: el.offsetWidth - el.clientWidth,
+        overflow: el.scrollHeight - el.clientHeight
+      }
+    })
+
+    // 先确认内容确实超出一屏，否则「没滚动条」是靠不住的空断言
+    expect(metrics.overflow).toBeGreaterThan(50)
+    expect(metrics.scrollbarWidth).toBe(0)
+  })
+
+  it('没有滚动条也能滚：滚轮与 PageDown 都行', async () => {
+    await page.evaluate(() => {
+      document.querySelector('.reader-scroll')!.scrollTop = 0
+    })
+
+    await page.mouse.move(400, 400)
+    await page.mouse.wheel(0, 200)
+    await expect.poll(scrollTopOfReader).toBeGreaterThan(50)
+
+    const afterWheel = await scrollTopOfReader()
+    // 点一下正文再按 PageDown
+    await page.locator('.reader-body').click({ position: { x: 40, y: 40 } })
+    await page.keyboard.press('PageDown')
+    await expect.poll(scrollTopOfReader).toBeGreaterThan(afterWheel)
+
+    await waitForScrollSettled()
+  })
+
+  it('正文可聚焦，键盘用户能拿到焦点提示', async () => {
+    expect(await page.evaluate(() => document.querySelector('.reader-scroll')!.getAttribute('tabindex'))).toBe('0')
   })
 
   it('三套主题的正文对比度都达得到 WCAG AA', async () => {

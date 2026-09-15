@@ -906,6 +906,23 @@ ul {
   position: relative;
   flex: 1;
   overflow-y: auto;
+  /*
+   * 隐藏原生滚动条：上方已经有可拖的进度条（还带百分比），
+   * 右侧再挂一条是重复的，而且滚动条会一直占掉 15px 的正文字宽。
+   * 滚轮与键盘翻页仍然可用。
+   */
+  scrollbar-width: none;
+}
+
+.reader-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* 只在键盘聚焦时给焦点提示，鼠标点进来不要画一圈大框 */
+.reader-scroll:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: -2px;
 }
 
 .reader-body {
