@@ -4,7 +4,11 @@
 
 ## 项目简介
 
-InkPick：集阅读器、单词本、笔记于一体的个人学习工具。技术选型待定。
+InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
+
+- 需求范围见 `docs/MVP.md`（当前阶段只做「读 / 钉 / 看 / 存」四件事）。
+- 技术栈：**Electron + electron-vite + React + TypeScript + Tailwind + Zustand + better-sqlite3**，仅桌面端。
+- 架构分层：`core/` 为纯 TS（无框架无 DOM 依赖，`anchor.ts` 是定位/重定位核心），`shell/` 为 Electron 壳。**不要把业务逻辑写进 `shell/`。**
 
 ## 核心工作流（必须遵守）
 
@@ -42,9 +46,24 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。技�
 - `fix: 修正生词本重复收藏`
 - `test: 补充笔记关联的单元测试`
 
+## 测试命令
+
+（脚手架搭建后补全，届时替换本节占位）
+
+| 用途 | 命令 |
+|---|---|
+| 单元测试 | `npm test`（Vitest，覆盖 `core/`） |
+| 端到端 | `npm run test:e2e`（Playwright，Electron） |
+| 类型检查 | `npm run typecheck` |
+| Lint | `npm run lint` |
+| 构建 | `npm run build` |
+
+`core/anchor.ts` 的重定位逻辑是最高价值单测点，改动它必须补测试。
+
 ## 代码约定
 
 - 保持改动聚焦，不顺手重构无关代码。
+- 业务逻辑一律放在 `core/`，保持纯 TS、可单测；`shell/` 只做渲染、文件访问与 IPC。
 - 遵循项目内已确立的分层与命名风格；新目录/新依赖先说明理由。
 - 依赖新增需在汇报中列出。
 

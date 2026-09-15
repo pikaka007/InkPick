@@ -70,10 +70,55 @@ Note  = Annotation + { content }
 4. EPUB（换渲染引擎，标注逻辑复用，只换 anchor 实现）
 5. 复习算法 / 同步 / PDF
 
-## 待定
+## 技术选型
 
-- 平台（桌面 / 移动 / Web）
-- 技术栈
-- 词典方案（离线词典包 vs 联网 API）
+### 平台
 
-以上三项技术选型确定后补充到本文件。
+**仅桌面**（Windows / macOS / Linux）。不做移动端，不做 Web 版。
+
+### 外壳：Electron
+
+选它的核心理由：**本产品的核心原语是「文本选中 + 精确字符偏移」**。Electron 自带 Chromium，三平台渲染与 Selection / Range 行为一致，把这个最容易踩坑的点变成已知问题；主进程可直接访问文件与 SQLite，没有浏览器沙箱的绕路。
+
+代价（已知并接受）：安装包 80~150MB、内存占用较高、启动比原生慢。个人工具可接受。
+
+**备选 Tauri 2**：包体仅 5~10MB，但使用系统 WebView（WebView2 / WKWebView / WebKitGTK），三平台文本渲染与选中行为不一致，对以「选中文本」为全部功能的产品风险过高。
+
+### 分层原则：外壳可替换
+
+不把逻辑焊死在 Electron 上：
+
+```
+core/          纯 TS，无框架、无 DOM 依赖
+  anchor.ts    定位、重定位、模糊匹配   ← 最该写单测的地方
+  model.ts     Annotation 与存储接口
+shell/         Electron 壳：渲染、文件访问、IPC
+```
+
+将来若换 Tauri，只需重写 `shell/`，`core/` 完全复用。
+
+### 依赖清单
+
+| 用途 | 选择 |
+|---|---|
+| 脚手架 | electron-vite |
+| UI | React + TypeScript |
+| 样式 | Tailwind CSS + shadcn/ui |
+| 状态 | Zustand |
+| 存储 | better-sqlite3（需 electron-rebuild） |
+| 测试 | Vitest（`core/`）+ Playwright（Electron E2E） |
+| 打包 | electron-builder |
+
+### 安全基线
+
+`contextIsolation: true`、`nodeIntegration: false`、preload 经 `contextBridge` 暴露最小 API。
+
+### 测试策略
+
+- `core/anchor.ts` 的重定位是**最高价值单测点**：改排版、改版本后能否找回原文，全靠它。
+- 纯逻辑走 Vitest，跑得快。
+- 交互闭环（选中 → 收藏 → 列表 → 跳回）走 Playwright E2E。
+
+### 待定
+
+- 词典方案（离线词典包 vs 联网 API）—— 第二步再定，不影响 MVP 开工。
