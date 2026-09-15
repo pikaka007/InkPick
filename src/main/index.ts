@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { normalizeContent } from '../core/text'
 import type { ImportedDocument } from '../core/api'
@@ -96,6 +96,27 @@ function registerIpc(): void {
   ipcMain.handle('dict:lookup', async (_event, word: string) => lookupWord(word))
 
   ipcMain.handle('dict:status', async () => dictionaryStatus())
+
+  ipcMain.handle(
+    'file:save-text',
+    async (_event, suggestedName: string, content: string): Promise<string | null> => {
+      const extension = extname(suggestedName).replace(/^\./, '')
+      const result = await dialog.showSaveDialog({
+        title: '导出',
+        defaultPath: suggestedName,
+        filters: extension
+          ? [
+              { name: extension.toUpperCase(), extensions: [extension] },
+              { name: '所有文件', extensions: ['*'] }
+            ]
+          : [{ name: '所有文件', extensions: ['*'] }]
+      })
+
+      if (result.canceled || !result.filePath) return null
+      await writeFile(result.filePath, content, 'utf-8')
+      return result.filePath
+    }
+  )
 }
 
 void app.whenReady().then(() => {

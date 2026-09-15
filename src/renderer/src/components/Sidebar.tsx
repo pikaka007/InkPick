@@ -17,6 +17,7 @@ interface SidebarProps {
   onJump: (annotation: Annotation) => void
   onRemove: (id: string) => void
   onSetDefinition: (annotationIds: string[], definition: string) => void
+  onExport: (kind: 'vocab' | 'notes') => void
 }
 
 const FILTERS: { key: Filter; label: string }[] = [
@@ -35,7 +36,8 @@ export default function Sidebar({
   onSelectDoc,
   onJump,
   onRemove,
-  onSetDefinition
+  onSetDefinition,
+  onExport
 }: SidebarProps): JSX.Element {
   const [filter, setFilter] = useState<Filter>('all')
   /** 正在补释义的分组 key */
@@ -115,6 +117,27 @@ export default function Sidebar({
               {item.label}
             </button>
           ))}
+
+          <span className="tabs-spacer" />
+
+          <button
+            type="button"
+            className="tab export"
+            title="导出为 Anki 用的 CSV（一个词一行）"
+            disabled={annotations.length === 0}
+            onClick={() => onExport('vocab')}
+          >
+            导出 CSV
+          </button>
+          <button
+            type="button"
+            className="tab export"
+            title="导出为 Markdown（词表 + 笔记）"
+            disabled={annotations.length === 0}
+            onClick={() => onExport('notes')}
+          >
+            导出 MD
+          </button>
         </div>
 
         {isEmpty && <p className="empty">选中正文里的文字，就能收藏单词或写笔记。</p>}

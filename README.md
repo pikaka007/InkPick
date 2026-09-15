@@ -4,9 +4,9 @@
 
 集 **阅读器**、**单词本**、**笔记** 于一体，**数据全部存在本地**。
 
-## 当前状态：MVP 闭环 + 词典已跑通
+## 当前状态：MVP 闭环 + 词典 + 导出已跑通
 
-六个功能：
+七个功能：
 
 | | 说明 |
 |---|---|
@@ -15,9 +15,11 @@
 | **析** | 收藏时自动查词典：音标 + 中文释义 + 词形还原（`words` → `word`） |
 | **看** | 左侧按**原形分组**的单词本 + 笔记列表，点一下跳回原文那句 |
 | **补** | 词典没收录的词可以手写一句释义 |
+| **带走** | 导出 Anki CSV（背单词） / Markdown（词表 + 笔记） |
 | **存** | 本地 JSON 持久化，重启不丢 |
 
-范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)，词库细节见 [`docs/DICTIONARY.md`](docs/DICTIONARY.md)。
+范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)，词库见 [`docs/DICTIONARY.md`](docs/DICTIONARY.md)，
+导出格式与 Anki 导入步骤见 [`docs/EXPORT.md`](docs/EXPORT.md)。
 
 ## 快速开始
 
@@ -35,8 +37,8 @@ npm 11 会为此打一条 `Unknown project config` 警告，可忽略。
 ## 常用命令
 
 ```bash
-npm test             # 单元测试（Vitest，120 个）
-npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，11 个，会先构建）
+npm test             # 单元测试（Vitest，144 个）
+npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，14 个，会先构建）
 npm run typecheck    # 类型检查
 npm run build        # 构建到 out/
 npm start            # 预览构建产物
@@ -49,6 +51,7 @@ src/core/            纯 TypeScript，无框架、无 DOM 依赖 —— 业务�
   anchor.ts          定位 / 重定位（最值钱的一段代码）
   dictionary.ts      词典解析、查词、词形还原
   vocab.ts           单词本分组（按 lemma 合并同一词的不同形态）
+  export.ts          Anki CSV / Markdown 生成
   csv.ts             ECDICT 的 CSV 解析（容错脏引号）
   text.ts            文本归一化、分段、取上下文句子
   store.ts           状态操作与序列化（纯函数）

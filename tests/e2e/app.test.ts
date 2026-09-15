@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { _electron as electron } from 'playwright-core'
 import type { ElectronApplication, Page } from 'playwright-core'
+import { parseCsvRecords } from '../../src/core/csv'
 
 const require = createRequire(import.meta.url)
 const electronPath = require('electron') as unknown as string
@@ -18,6 +19,30 @@ const electronPath = require('electron') as unknown as string
 let app: ElectronApplication
 let page: Page
 let userDataDir: string
+let exportDir: string
+
+/** 把主进程的保存对话框换成固定路径，才能真的验证导出的文件内容 */
+async function stubSaveDialog(filePath: string): Promise<void> {
+  await app.evaluate(({ dialog }, target) => {
+    const store = globalThis as unknown as { __inkpickSuggested?: string }
+    dialog.showSaveDialog = async (options) => {
+      // 签名的第一个参数是重载联合类型，这里按实际调用方式取
+      store.__inkpickSuggested = (options as { defaultPath?: string } | undefined)?.defaultPath ?? ''
+      return { canceled: false, filePath: target }
+    }
+  }, filePath)
+}
+
+async function lastSuggestedName(): Promise<string> {
+  return app.evaluate(() => (globalThis as unknown as { __inkpickSuggested?: string }).__inkpickSuggested ?? '')
+}
+
+/** 导出被取消的场景 */
+async function stubSaveDialogCanceled(): Promise<void> {
+  await app.evaluate(({ dialog }) => {
+    dialog.showSaveDialog = async () => ({ canceled: true, filePath: '' })
+  })
+}
 
 async function launch(): Promise<void> {
   app = await electron.launch({
@@ -74,6 +99,7 @@ async function vocabGroup(lemma: string) {
 
 beforeAll(async () => {
   userDataDir = await mkdtemp(join(tmpdir(), 'inkpick-e2e-'))
+  exportDir = await mkdtemp(join(tmpdir(), 'inkpick-export-'))
   await launch()
 
   // 数据隔离：绝不能把测试数据写进真实 userData
@@ -84,6 +110,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close()
   if (userDataDir) await rm(userDataDir, { recursive: true, force: true })
+  if (exportDir) await rm(exportDir, { recursive: true, force: true })
 })
 
 describe('读', () => {
@@ -155,6 +182,60 @@ describe('钉 · 词典', () => {
 
     await expect.poll(async () => group.locator('.vocab-definition').textContent()).toBe('这个阅读器本身')
     expect(await group.locator('.missing-hint').count()).toBe(0)
+  })
+})
+
+describe('导出', () => {
+  it('导出 Anki CSV：一个词一行，多次收藏合成多行上下文', async () => {
+    const target = join(exportDir, 'out.csv')
+    await stubSaveDialog(target)
+
+    await page.getByRole('button', { name: '导出 CSV' }).click()
+    await expect.poll(async () => readFile(target, 'utf-8').catch(() => null)).not.toBeNull()
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('已导出到')
+
+    // 建议文件名带上了文档标题与用途
+    expect(await lastSuggestedName()).toBe('示例 · On Reading-词表.csv')
+
+    const records = parseCsvRecords(await readFile(target, 'utf-8'))
+    expect(records.map((row) => row.Word)).toEqual(['reading', 'word', 'InkPick'])
+    expect(records[0].Phonetic).not.toBe('')
+    expect(records[0].Source).toBe('示例 · On Reading')
+
+    // word 组里有 word 与 words 两次收藏
+    const wordRow = records.find((row) => row.Word === 'word')!
+    expect(wordRow.Context.split('\n')).toHaveLength(2)
+
+    // 词典查不到的词导出的是手写释义
+    expect(records.find((row) => row.Word === 'InkPick')!.Definition).toBe('这个阅读器本身')
+  })
+
+  it('导出 Markdown：词表与笔记两个小节都在', async () => {
+    const target = join(exportDir, 'out.md')
+    await stubSaveDialog(target)
+
+    await page.getByRole('button', { name: '导出 MD' }).click()
+    await expect.poll(async () => readFile(target, 'utf-8').catch(() => '')).toContain('## 单词')
+
+    expect(await lastSuggestedName()).toBe('示例 · On Reading-笔记.md')
+
+    const markdown = await readFile(target, 'utf-8')
+    expect(markdown.startsWith('# 示例 · On Reading')).toBe(true)
+    expect(markdown).toContain('3 条词条 / 1 条笔记')
+    expect(markdown).toContain('## 单词')
+    expect(markdown).toContain('## 笔记')
+    expect(markdown).toContain('### 这句是关键')
+    // 词形与原形不同时标出来
+    expect(markdown).toContain('*(words)*')
+  })
+
+  it('取消保存时不报错也不写文件', async () => {
+    const target = join(exportDir, 'never.csv')
+    await stubSaveDialogCanceled()
+
+    await page.getByRole('button', { name: '导出 CSV' }).click()
+    await expect.poll(async () => page.locator('.toast').textContent()).toBe('已取消导出')
+    expect(await readFile(target, 'utf-8').catch(() => null)).toBeNull()
   })
 })
 

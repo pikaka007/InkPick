@@ -9,6 +9,8 @@ const api: InkPickApi = {
   importDocument: () => ipcRenderer.invoke('doc:import') as Promise<ImportedDocument | null>,
   lookupWord: (word: string) => ipcRenderer.invoke('dict:lookup', word) as Promise<LookupResult>,
   dictionaryStatus: () => ipcRenderer.invoke('dict:status') as Promise<DictionaryStatus>,
+  saveTextFile: (suggestedName: string, content: string) =>
+    ipcRenderer.invoke('file:save-text', suggestedName, content) as Promise<string | null>,
   onBeforeClose: (handler: () => void) => {
     ipcRenderer.on('app:before-close', () => handler())
   },

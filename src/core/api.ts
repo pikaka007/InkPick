@@ -27,6 +27,8 @@ export interface InkPickApi {
   lookupWord(word: string): Promise<LookupResult>
   /** 当前词库信息 */
   dictionaryStatus(): Promise<DictionaryStatus>
+  /** 弹保存框写文本文件；用户取消返回 null，否则返回保存路径 */
+  saveTextFile(suggestedName: string, content: string): Promise<string | null>
   /** 主进程在关窗前询问一次，渲染进程必须落盘后调 flushDone() */
   onBeforeClose(handler: () => void): void
   flushDone(): void

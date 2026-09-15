@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import { resolveAnchor } from '@core/anchor'
+import { annotationsToMarkdown, suggestedFileName, vocabToAnkiCsv } from '@core/export'
+import { groupVocab } from '@core/vocab'
 import type { Annotation } from '@core/types'
 import Reader from '@renderer/components/Reader'
 import type { JumpTarget } from '@renderer/components/Reader'
@@ -24,6 +26,13 @@ export default function App(): JSX.Element {
 
   const [jump, setJump] = useState<JumpTarget | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 2600)
+    return () => clearTimeout(timer)
+  }, [toast])
 
   useEffect(() => {
     void init()
@@ -62,6 +71,31 @@ export default function App(): JSX.Element {
     selectDoc(docId)
   }
 
+  /**
+   * 导出范围跟侧栏一致：只导出当前文档的标注。
+   * 跨文档合并导出（把所有书的生词并成一本）是后续项，见 docs/MVP.md。
+   */
+  const handleExport = async (kind: 'vocab' | 'notes'): Promise<void> => {
+    if (!doc) return
+    if (annotations.length === 0) {
+      setToast('这个文档还没有标注')
+      return
+    }
+
+    const content =
+      kind === 'vocab'
+        ? vocabToAnkiCsv(groupVocab(annotations), doc.title)
+        : annotationsToMarkdown(annotations, doc)
+
+    const fileName = suggestedFileName(doc.title, kind, kind === 'vocab' ? 'csv' : 'md')
+    try {
+      const saved = await window.api.saveTextFile(fileName, content)
+      setToast(saved ? `已导出到 ${saved}` : '已取消导出')
+    } catch (error) {
+      setToast(`导出失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   if (!ready) {
     return <div className="boot">加载中…</div>
   }
@@ -79,6 +113,7 @@ export default function App(): JSX.Element {
         onJump={handleJump}
         onRemove={removeAnnotationById}
         onSetDefinition={setManualDefinition}
+        onExport={(kind) => void handleExport(kind)}
       />
 
       {doc ? (
@@ -91,6 +126,7 @@ export default function App(): JSX.Element {
           onAddVocab={(range: OffsetRange, term: string) => addVocab(range, term)}
           onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
           onProgress={handleProgress}
+          onNotify={setToast}
         />
       ) : (
         <main className="welcome">
@@ -111,6 +147,8 @@ export default function App(): JSX.Element {
           </ol>
         </main>
       )}
+
+      {toast && <div className="toast">{toast}</div>}
     </div>
   )
 }

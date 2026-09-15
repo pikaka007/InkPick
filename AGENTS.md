@@ -6,9 +6,12 @@
 
 InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 
-- 需求范围见 `docs/MVP.md`（当前阶段只做「读 / 钉 / 看 / 存」四件事）。
-- 技术栈：**Electron + electron-vite + React + TypeScript + Tailwind + Zustand + better-sqlite3**，仅桌面端。
-- 架构分层：`core/` 为纯 TS（无框架无 DOM 依赖，`anchor.ts` 是定位/重定位核心），`shell/` 为 Electron 壳。**不要把业务逻辑写进 `shell/`。**
+- 需求范围见 `docs/MVP.md`（当前已跑通「读 / 钉 / 析 / 看 / 补 / 带走 / 存」）。
+- 技术栈：**Electron + electron-vite + React + TypeScript + Zustand**，仅桌面端。
+  样式是手写 CSS（没用 Tailwind），存储是本地 JSON 单文件（没用 better-sqlite3）——
+  偏离原因见 `docs/MVP.md` 的「已知偏离计划之处」。
+- 架构分层：`core/` 为纯 TS（无框架无 DOM 依赖，`anchor.ts` 是定位/重定位核心），
+  `shell/` 为 Electron 壳。**不要把业务逻辑写进 `shell/`。**
 
 ## 核心工作流（必须遵守）
 
@@ -24,6 +27,7 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
    - `docs/MVP.md`：范围、已经做了什么、计划偏离
    - `AGENTS.md`：流程、测试命令、约束
    - `docs/DICTIONARY.md`：词库相关
+  - `docs/EXPORT.md`：导出格式相关
    - 发现与计划不符（如某方案实测不可行），**必须写下来**，而不是默默不做。
 4. **提交并推送**：`git add` + `git commit` + `git push`。一个逻辑变更一个 commit。
 5. **汇报**：向用户说明「改了什么 / 测试结果 / 文档 / commit 号」。

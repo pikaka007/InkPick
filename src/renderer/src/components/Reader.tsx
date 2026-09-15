@@ -25,6 +25,8 @@ interface ReaderProps {
   onAddVocab: (range: OffsetRange, term: string) => void
   onAddNote: (range: OffsetRange, content: string) => void
   onProgress: (offset: number) => void
+  /** 提示消息交给 App 统一展示 */
+  onNotify: (message: string) => void
 }
 
 function clearDomSelection(): void {
@@ -38,7 +40,8 @@ export default function Reader({
   initialOffset,
   onAddVocab,
   onAddNote,
-  onProgress
+  onProgress,
+  onNotify
 }: ReaderProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -48,7 +51,6 @@ export default function Reader({
   const [selection, setSelection] = useState<SelectionInfo | null>(null)
   const [noteTarget, setNoteTarget] = useState<OffsetRange | null>(null)
   const [noteText, setNoteText] = useState('')
-  const [toast, setToast] = useState<string | null>(null)
 
   const segments = useMemo(() => splitParagraphs(doc.content), [doc.content])
   const starts = useMemo(() => segmentStarts(segments), [segments])
@@ -106,12 +108,6 @@ export default function Reader({
     }
     return undefined
   }, [jump, starts])
-
-  useEffect(() => {
-    if (!toast) return
-    const timer = setTimeout(() => setToast(null), 1600)
-    return () => clearTimeout(timer)
-  }, [toast])
 
   const handleScroll = useCallback(() => {
     const container = scrollRef.current
@@ -172,7 +168,7 @@ export default function Reader({
     onAddVocab({ start: selection.start, end: selection.end }, term)
     setSelection(null)
     clearDomSelection()
-    setToast('已加入单词本')
+    onNotify('已加入单词本')
   }
 
   const handleAddNote = (): void => {
@@ -190,7 +186,7 @@ export default function Reader({
     setNoteTarget(null)
     setNoteText('')
     clearDomSelection()
-    setToast('笔记已保存')
+    onNotify('笔记已保存')
   }
 
   return (
@@ -260,8 +256,6 @@ export default function Reader({
           </div>
         </div>
       )}
-
-      {toast && <div className="toast">{toast}</div>}
     </div>
   )
 }

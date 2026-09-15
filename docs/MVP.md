@@ -66,7 +66,7 @@ Note  = Annotation + { content }
 
 1. ✅ 上述 4 件事闭环（TXT）
 2. ✅ 词典释义自动填充 + 词形还原（lemma，避免 running/ran/runs 变三个词条）
-3. 导出 Anki CSV / Markdown
+3. ✅ 导出 Anki CSV / Markdown（格式与 Anki 导入步骤见 [`EXPORT.md`](EXPORT.md)）
 4. EPUB（换渲染引擎，标注复用，只换 anchor 实现）
 5. 复习算法 / 同步 / PDF
 
@@ -138,6 +138,11 @@ shell/         Electron 壳：渲染、文件访问、IPC
 - **未接入 Lint**：待补。
 - **未配置 CSP**：正文全程用 React 文本节点渲染（无 `dangerouslySetInnerHTML`），
   且不加载远程内容，风险可控；打包前补上。
+- **导出不能跨文档**：只能导当前文档的标注。一本一本地导在 Anki 里会累积，
+  但做不了「一次生成全部生词」。要做的话得先把单词本改成跨文档视图。
+- **导出不带阅读位置**：给的是文本内容，没有可点击跳回原文的定位信息。
+- **导出释义未经筛选**：直接给 ECDICT 的 `translation` 全文，包含 `[计]` `[法]` 等
+  领域标记与近义罗列，做 Anki 卡片时偏长。要改需先验证义项筛选策略。
 - **TXT 分段即分段**：硬换行的 TXT（如 Gutenberg）会把每行当一个段落。
   代价是行距偏大，好处是偏移量映射简单可靠。后续按标点合并行可改善。
 - **词性拆分依赖 ECDICT 的 `translation` 文本格式**：形如 `n. 奔跑`。

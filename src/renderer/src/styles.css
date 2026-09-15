@@ -192,8 +192,14 @@ ul {
 
 .filter-tabs {
   display: flex;
+  align-items: center;
   gap: 4px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.tabs-spacer {
+  flex: 1;
 }
 
 .tab {
@@ -209,6 +215,14 @@ ul {
   color: var(--text);
   border-color: var(--border);
   font-weight: 600;
+}
+
+.tab.export {
+  border-style: dashed;
+}
+
+.tab.export:disabled {
+  opacity: 0.4;
 }
 
 .annotation {
