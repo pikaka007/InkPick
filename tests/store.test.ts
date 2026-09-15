@@ -10,10 +10,12 @@ import {
   getDoc,
   removeAnnotation,
   serializeStore,
+  setPrefs,
   setProgress,
   updateAnnotation
 } from '@core/store'
 import { createAnchor } from '@core/anchor'
+import { DEFAULT_PREFS } from '@core/prefs'
 import type { Doc } from '@core/types'
 
 function makeDoc(content = 'hello world'): Doc {
@@ -83,6 +85,34 @@ describe('阅读进度', () => {
     const store = setProgress(createEmptyStore(), 'doc-1', createAnchor('abcdef', 3, 3))
     expect(store.progress['doc-1'].start).toBe(3)
     expect(store.progress['doc-2']).toBeUndefined()
+  })
+})
+
+describe('阅读偏好', () => {
+  it('新库带默认偏好', () => {
+    expect(createEmptyStore().prefs).toEqual(DEFAULT_PREFS)
+  })
+
+  it('可以只改其中一项', () => {
+    const store = setPrefs(createEmptyStore(), { theme: 'dark' })
+    expect(store.prefs.theme).toBe('dark')
+    expect(store.prefs.fontSize).toBe(DEFAULT_PREFS.fontSize)
+  })
+
+  it('写入时就把非法值夹回合法档位', () => {
+    const store = setPrefs(createEmptyStore(), { fontSize: 999, theme: 'neon' as never })
+    expect(store.prefs.fontSize).toBe(24)
+    expect(store.prefs.theme).toBe(DEFAULT_PREFS.theme)
+  })
+
+  it('旧版本文件里没有 prefs 时补默认值', () => {
+    const legacy = JSON.stringify({ version: 1, docs: [], annotations: [], progress: {} })
+    expect(deserializeStore(legacy).prefs).toEqual(DEFAULT_PREFS)
+  })
+
+  it('偏好不合法时不会让整个库打不开', () => {
+    const broken = JSON.stringify({ version: 1, prefs: '这是字符串不是对象' })
+    expect(deserializeStore(broken).prefs).toEqual(DEFAULT_PREFS)
   })
 })
 

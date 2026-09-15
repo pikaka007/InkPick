@@ -29,6 +29,13 @@ export default function App(): JSX.Element {
   const removeAnnotationById = useAppStore((state) => state.removeAnnotationById)
   const setManualDefinition = useAppStore((state) => state.setManualDefinition)
   const saveProgress = useAppStore((state) => state.saveProgress)
+  const updatePrefs = useAppStore((state) => state.updatePrefs)
+  const prefs = store.prefs
+
+  // 主题挂在 documentElement 上，整个应用（含侧栏）一起换
+  useEffect(() => {
+    document.documentElement.dataset.theme = prefs.theme
+  }, [prefs.theme])
 
   const [jump, setJump] = useState<JumpTarget | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
@@ -151,6 +158,8 @@ export default function App(): JSX.Element {
           onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
           onProgress={handleProgress}
           onNotify={setToast}
+          prefs={prefs}
+          onPrefsChange={updatePrefs}
         />
       ) : (
         <main className="welcome">

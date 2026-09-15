@@ -73,6 +73,7 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 | 类型检查 | `npm run typecheck` |
 | 构建 | `npm run build` |
 | 重建词库 | `npm run dict:build`（需 `.dict-src/` 源数据，见 docs/DICTIONARY.md） |
+| 截图 | `npm run shot`（产物在 `.shots/`） |
 | Lint | **尚未接入** —— 补上之前不要假装跑过 |
 
 改动后的最低要求：
@@ -81,6 +82,12 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 - 动了界面 / 主进程 / 持久化：还要跑 `npm run test:e2e`
 - 改了 `src/core/anchor.ts`、`src/renderer/src/selection.ts`、`src/main/storeFile.ts`、
   关窗落盘握手、或 `resources/dictionary/` 里的词库文件：**必须**跑 `npm run test:e2e`
+
+### 界面改动怎么验证
+
+- 计算值用 E2E 断言（字号变了没有、主题换了没有、**对比度是否达得到 WCAG AA**）
+- **外观好不好看得人眼看**：`npm run shot` 出图到 `.shots/`，不要用「断言过了」冒充「看着没问题」
+- E2E 里过滤单个用例跑不了（它们依赖前面用例先加载文档），要验证就整跑
 
 ### 测试要能失败
 
@@ -96,6 +103,7 @@ src/core/       纯 TS，无框架无 DOM 依赖 —— 业务逻辑全在这里
   dictionary.ts 词典解析、查词、词形还原
   vocab.ts      单词本分组（按 lemma 合并）
   senses.ts     释义收敛（去领域标记 / 限制义项与近义）
+  prefs.ts      阅读偏好档位（字号/行距/行宽/主题）与进度换算
   csv.ts        ECDICT 的 CSV 解析（容错）
 src/main/       Electron 主进程：窗口、IPC、文件读写、词典
 src/preload/    contextBridge 最小 API

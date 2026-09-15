@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { resolveAnchor } from '@core/anchor'
+import {
+  LINE_HEIGHTS,
+  MEASURE_LABELS,
+  MEASURE_WIDTHS,
+  THEME_LABELS,
+  THEMES,
+  MEASURES,
+  nextInCycle,
+  progressRatio,
+  scrollTopForRatio,
+  stepFontSize
+} from '@core/prefs'
+import type { ReaderPrefs } from '@core/prefs'
 import { splitParagraphs } from '@core/text'
 import type { Annotation, Doc } from '@core/types'
 import { applyHighlight, clearHighlight, highlightSupported } from '@renderer/highlight'
 import { elementAtOffset, rangeForOffsets, rangeToOffsets, segmentStarts } from '@renderer/selection'
 import type { OffsetRange } from '@renderer/selection'
+import ProgressBar from './ProgressBar'
 
 export interface JumpTarget extends OffsetRange {
   nonce: number
@@ -27,6 +41,8 @@ interface ReaderProps {
   onProgress: (offset: number) => void
   /** 提示消息交给 App 统一展示 */
   onNotify: (message: string) => void
+  prefs: ReaderPrefs
+  onPrefsChange: (patch: Partial<ReaderPrefs>) => void
 }
 
 function clearDomSelection(): void {
@@ -41,7 +57,9 @@ export default function Reader({
   onAddVocab,
   onAddNote,
   onProgress,
-  onNotify
+  onNotify,
+  prefs,
+  onPrefsChange
 }: ReaderProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -51,6 +69,7 @@ export default function Reader({
   const [selection, setSelection] = useState<SelectionInfo | null>(null)
   const [noteTarget, setNoteTarget] = useState<OffsetRange | null>(null)
   const [noteText, setNoteText] = useState('')
+  const [ratio, setRatio] = useState(0)
 
   const segments = useMemo(() => splitParagraphs(doc.content), [doc.content])
   const starts = useMemo(() => segmentStarts(segments), [segments])
@@ -113,6 +132,8 @@ export default function Reader({
     const container = scrollRef.current
     const root = rootRef.current
     if (!container || !root) return
+
+    setRatio(progressRatio(container.scrollTop, container.scrollHeight, container.clientHeight))
 
     const top = container.scrollTop + 8
     const elements = root.querySelectorAll<HTMLElement>('[data-seg]')
@@ -192,12 +213,72 @@ export default function Reader({
   return (
     <div className="reader">
       <header className="reader-header">
-        <h1>{doc.title}</h1>
-        <span className="reader-meta">
-          {doc.content.length.toLocaleString()} 字符 · {annotations.length} 条标注
-          {highlightSupported() ? '' : ' · 当前环境不支持高亮'}
-        </span>
+        <div className="reader-title">
+          <h1>{doc.title}</h1>
+          <span className="reader-meta">
+            {doc.content.length.toLocaleString()} 字符 · {annotations.length} 条标注
+            {highlightSupported() ? '' : ' · 当前环境不支持高亮'}
+          </span>
+        </div>
+
+        <div className="reader-tools">
+          <button
+            type="button"
+            className="tool"
+            title="缩小字号"
+            aria-label="缩小字号"
+            onClick={() => onPrefsChange({ fontSize: stepFontSize(prefs.fontSize, -1) })}
+          >
+            A-
+          </button>
+          <span className="tool-value">{prefs.fontSize}</span>
+          <button
+            type="button"
+            className="tool"
+            title="放大字号"
+            aria-label="放大字号"
+            onClick={() => onPrefsChange({ fontSize: stepFontSize(prefs.fontSize, 1) })}
+          >
+            A+
+          </button>
+
+          <button
+            type="button"
+            className="tool"
+            title="行距"
+            onClick={() => onPrefsChange({ lineHeight: nextInCycle(LINE_HEIGHTS, prefs.lineHeight as (typeof LINE_HEIGHTS)[number]) })}
+          >
+            行距 {prefs.lineHeight}
+          </button>
+
+          <button
+            type="button"
+            className="tool"
+            title="行宽"
+            onClick={() => onPrefsChange({ measure: nextInCycle(MEASURES, prefs.measure) })}
+          >
+            行宽 {MEASURE_LABELS[prefs.measure]}
+          </button>
+
+          <button
+            type="button"
+            className="tool"
+            title="主题"
+            onClick={() => onPrefsChange({ theme: nextInCycle(THEMES, prefs.theme) })}
+          >
+            主题 {THEME_LABELS[prefs.theme]}
+          </button>
+        </div>
       </header>
+
+      <ProgressBar
+        ratio={ratio}
+        onSeek={(next) => {
+          const container = scrollRef.current
+          if (!container) return
+          container.scrollTop = scrollTopForRatio(next, container.scrollHeight, container.clientHeight)
+        }}
+      />
 
       <div
         className="reader-scroll"
@@ -206,7 +287,15 @@ export default function Reader({
         onMouseUp={handleSelection}
         onKeyUp={handleSelection}
       >
-        <div className="reader-body" ref={rootRef}>
+        <div
+          className="reader-body"
+          ref={rootRef}
+          style={{
+            maxWidth: MEASURE_WIDTHS[prefs.measure],
+            fontSize: `${prefs.fontSize}px`,
+            lineHeight: prefs.lineHeight
+          }}
+        >
           {segments.map((segment, index) => (
             <p className="paragraph" key={index} data-seg={index}>
               {segment.text}

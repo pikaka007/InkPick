@@ -11,6 +11,7 @@
 | | 说明 |
 |---|---|
 | **读** | 打开 TXT / Markdown，滚动阅读，关掉再打开还在原位置 |
+| **读得舒服** | 可调字号 / 行距 / 行宽，三套主题（浅色 · 护眼 · 深色），可拖的进度条 |
 | **钉** | 选中一段文字 → 收藏为**单词** 或 **笔记**（自动记下所在的那句话） |
 | **析** | 收藏时自动查词典：音标 + 中文释义 + 词形还原（`words` → `word`），释义自动收敛掉领域标记与近义罗列 |
 | **看** | 左侧单词本 + 笔记列表，可按**本文件 / 全部文档**看，点一下跳回原文那句 |
@@ -38,11 +39,12 @@ npm 11 会为此打一条 `Unknown project config` 警告，可忽略。
 ## 常用命令
 
 ```bash
-npm test             # 单元测试（Vitest，173 个）
-npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，21 个，会先构建）
+npm test             # 单元测试（Vitest，197 个）
+npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，30 个，会先构建）
 npm run typecheck    # 类型检查
 npm run build        # 构建到 out/
 npm start            # 预览构建产物
+npm run shot         # 截五张图到 .shots/（主题/选中态），人眼看外观用
 ```
 
 ## 架构
@@ -55,6 +57,7 @@ src/core/            纯 TypeScript，无框架、无 DOM 依赖 —— 业务�
   senses.ts          释义收敛（去领域标记 / 限制义项与近义）
   export.ts          Anki CSV / Markdown 生成
   csv.ts             ECDICT 的 CSV 解析（容错脏引号）
+  prefs.ts           阅读偏好档位与进度换算
   text.ts            文本归一化、分段、取上下文句子
   store.ts           状态操作与序列化（纯函数）
   types.ts           领域模型：Annotation 统一承载单词与笔记

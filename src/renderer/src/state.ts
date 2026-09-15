@@ -13,10 +13,12 @@ import {
   getDoc,
   removeAnnotation,
   serializeStore,
+  setPrefs,
   setProgress,
   updateAnnotation
 } from '@core/store'
 import type { Anchor, Annotation, Doc, Store } from '@core/types'
+import type { ReaderPrefs } from '@core/prefs'
 import type { OffsetRange } from './selection'
 
 export type { OffsetRange }
@@ -58,6 +60,8 @@ interface AppState {
   /** 查词并回填。查不到也正常，不回滚标注 */
   lookupAndPatch: (term: string, annotationIds: string[]) => Promise<void>
   saveProgress: (docId: string, offset: number) => void
+  /** 阅读偏好：字号 / 行高 / 行宽 / 主题 */
+  updatePrefs: (patch: Partial<ReaderPrefs>) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => {
@@ -193,7 +197,9 @@ export const useAppStore = create<AppState>((set, get) => {
       const doc = getDoc(get().store, docId)
       if (!doc) return
       commit((store) => setProgress(store, docId, createAnchor(doc.content, offset, offset)))
-    }
+    },
+
+    updatePrefs: (patch) => commit((store) => setPrefs(store, patch))
   }
 })
 

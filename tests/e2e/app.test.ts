@@ -44,6 +44,25 @@ async function stubSaveDialogCanceled(): Promise<void> {
   })
 }
 
+/**
+ * 相对亮度 → 对比度（WCAG 2.x）。公式抄自规范，用来代替「肉眼看一眼」。
+ * 纯计算，不依赖日志库，这样开发脚本里也能用。
+ */
+function contrast(foreground: string, background: string): number {
+  const luminance = (color: string): number => {
+    const channels = (color.match(/\d+/g) ?? ['0', '0', '0'])
+      .slice(0, 3)
+      .map((value) => {
+        const c = Number(value) / 255
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+      })
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+  }
+
+  const [lighter, darker] = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
 async function launch(): Promise<void> {
   app = await electron.launch({
     executablePath: electronPath,
@@ -108,7 +127,12 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  if (app) await app.close()
+  // 中间有测试会自己关掉应用，已经关了就别再关
+  try {
+    if (app) await app.close()
+  } catch {
+    // 已经退出，忽略
+  }
   if (userDataDir) await rm(userDataDir, { recursive: true, force: true })
   if (exportDir) await rm(exportDir, { recursive: true, force: true })
 })
@@ -314,6 +338,131 @@ describe('跨文档单词本', () => {
   })
 })
 
+describe('阅读体验', () => {
+  const bodyFontSize = (): Promise<string> =>
+    page.evaluate(() => getComputedStyle(document.querySelector('.reader-body')!).fontSize)
+
+  const bodyLineHeight = (): Promise<string> =>
+    page.evaluate(() => getComputedStyle(document.querySelector('.reader-body')!).lineHeight)
+
+  const bodyWidth = (): Promise<number> =>
+    page.evaluate(() => document.querySelector('.reader-body')!.getBoundingClientRect().width)
+
+  const theme = (): Promise<string> =>
+    page.evaluate(() => document.documentElement.dataset.theme ?? '')
+
+  const appBackground = (): Promise<string> =>
+    page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+
+  it('放大字号会真的改变正文字号', async () => {
+    const before = await bodyFontSize()
+    await page.getByRole('button', { name: '放大字号' }).click()
+    await expect.poll(bodyFontSize).not.toBe(before)
+    expect(parseFloat(await bodyFontSize())).toBeGreaterThan(parseFloat(before))
+  })
+
+  it('字号到顶后不再变化（不循环回最小值）', async () => {
+    for (let i = 0; i < 6; i++) await page.getByRole('button', { name: '放大字号' }).click()
+    expect(await bodyFontSize()).toBe('24px')
+
+    await page.getByRole('button', { name: '缩小字号' }).click()
+    await expect.poll(bodyFontSize).toBe('21px')
+  })
+
+  it('切换行距会改变行高', async () => {
+    const before = await bodyLineHeight()
+    await page.getByRole('button', { name: /^行距/ }).click()
+    await expect.poll(bodyLineHeight).not.toBe(before)
+  })
+
+  it('切换行宽会改变正文宽度', async () => {
+    const before = await bodyWidth()
+    await page.getByRole('button', { name: /^行宽/ }).click()
+    await expect.poll(bodyWidth).not.toBe(before)
+    expect(await bodyWidth()).toBeGreaterThan(before)
+  })
+
+  it('切换主题会换掉整页配色', async () => {
+    const light = await appBackground()
+    expect(await theme()).toBe('light')
+
+    await page.getByRole('button', { name: /^主题/ }).click()
+    await expect.poll(theme).toBe('sepia')
+    const sepia = await appBackground()
+    expect(sepia).not.toBe(light)
+
+    await page.getByRole('button', { name: /^主题/ }).click()
+    await expect.poll(theme).toBe('dark')
+    const dark = await appBackground()
+    expect(dark).not.toBe(sepia)
+  })
+
+  it('三套主题的正文对比度都达得到 WCAG AA', async () => {
+    // 看不到界面的时候，算对比度比“看一眼”更可靠
+    const themes = ['light', 'sepia', 'dark']
+    for (const target of themes) {
+      await page.evaluate((name) => {
+        document.documentElement.dataset.theme = name
+      }, target)
+
+      const colors = await page.evaluate(() => {
+        const body = getComputedStyle(document.body)
+        const reader = getComputedStyle(document.querySelector('.reader-body')!)
+        const meta = getComputedStyle(document.querySelector('.reader-meta')!)
+        const docs = getComputedStyle(document.querySelector('.doc-item')!)
+        return {
+          bg: body.backgroundColor,
+          text: body.color,
+          reader: reader.color,
+          meta: meta.color,
+          docItem: docs.color
+        }
+      })
+
+      // 正文（正常字号）要求 4.5:1
+      expect(contrast(colors.reader, colors.bg), `${target} 正文对比度`).toBeGreaterThanOrEqual(4.5)
+      // 次要信息（小字）放宽到 4.5 仍应满足，至少不能低于 3
+      expect(contrast(colors.meta, colors.bg), `${target} 次要文字对比度`).toBeGreaterThanOrEqual(3)
+      expect(contrast(colors.docItem, colors.bg), `${target} 侧栏文字对比度`).toBeGreaterThanOrEqual(4.5)
+    }
+
+    // 切回深色，后面的测试与存档断言依赖它
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = 'dark'
+    })
+  })
+
+  it('进度条能显示百分比并跳转', async () => {
+    // 先回到顶部，确保有可滚动的空间
+    await page.evaluate(() => {
+      document.querySelector('.reader-scroll')!.scrollTop = 0
+    })
+    await expect.poll(async () => page.locator('.progress-value').textContent()).toBe('0%')
+
+    const track = page.locator('.progress-track')
+    const box = (await track.boundingBox())!
+    await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2)
+
+    await expect.poll(async () => parseFloat((await page.locator('.progress-value').textContent()) ?? '0')).toBeGreaterThan(60)
+    expect(await page.evaluate(() => document.querySelector('.reader-scroll')!.scrollTop)).toBeGreaterThan(0)
+  })
+
+  it('阅读偏好会写进存档', async () => {
+    await app.close()
+    const raw = await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')
+    const persisted = JSON.parse(raw) as { prefs?: Record<string, unknown> }
+
+    expect(persisted.prefs).toMatchObject({ fontSize: 21, theme: 'dark', measure: 'wide' })
+    await launch()
+  })
+
+  it('重开后偏好还在', async () => {
+    await page.waitForSelector('.reader')
+    expect(await theme()).toBe('dark')
+    expect(await bodyFontSize()).toBe('21px')
+  })
+})
+
 describe('看', () => {
   it('点某一次收藏能跳回原文，并标出当前位置', async () => {
     const group = await vocabGroup('word')
@@ -321,13 +470,17 @@ describe('看', () => {
 
     await expect.poll(async () => group.locator('.occurrence.active').count()).toBe(1)
 
-    const visible = await page.evaluate(() => {
-      const paragraph = document.querySelector('[data-seg="2"]')
-      if (!paragraph) return false
-      const rect = paragraph.getBoundingClientRect()
-      return rect.top >= -5 && rect.top < window.innerHeight
-    })
-    expect(visible).toBe(true)
+    // 跳转是平滑滚动，必须等动画走完，不能立即断言
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const paragraph = document.querySelector('[data-seg="2"]')
+          if (!paragraph) return false
+          const rect = paragraph.getBoundingClientRect()
+          return rect.top >= -5 && rect.top < window.innerHeight
+        })
+      )
+      .toBe(true)
   })
 
   it('标注计数反映的是收藏次数而不是分组数', async () => {

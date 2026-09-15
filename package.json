@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "npm run build && vitest run --config vitest.e2e.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "dict:build": "esbuild scripts/build-dictionary.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/dict-build.mjs --log-level=warning && node node_modules/.cache/dict-build.mjs"
+    "dict:build": "esbuild scripts/build-dictionary.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/dict-build.mjs --log-level=warning && node node_modules/.cache/dict-build.mjs",
+    "shot": "npm run build && esbuild scripts/screenshot.ts --bundle --platform=node --format=esm --external:playwright-core --outfile=node_modules/.cache/screenshot.mjs --log-level=warning && node node_modules/.cache/screenshot.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",

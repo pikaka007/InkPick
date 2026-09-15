@@ -5,6 +5,7 @@
  * 词条与笔记是同一个东西 —— 「一段原文 + 一个位置」，只是负载不同。
  * 所以只有一张 Annotation 表，不要拆成三张。
  */
+import type { ReaderPrefs } from './prefs'
 
 /** 标注在原文中的位置。offset 之外冗余存 text/prefix/suffix，用于内容漂移后的重定位。 */
 export interface Anchor {
@@ -68,4 +69,6 @@ export interface Store {
   /** docId -> 上次阅读位置 */
   progress: Record<string, Anchor>
   lastDocId?: string
+  /** 阅读偏好。旧数据里没这个字段，反序列化时会补默认值 */
+  prefs: ReaderPrefs
 }

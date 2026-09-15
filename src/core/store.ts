@@ -3,11 +3,13 @@
  * 持久化由 shell 负责（当前实现：main 进程写单个 JSON 文件，见 src/main/storeFile.ts）。
  */
 import type { Anchor, Annotation, AnnotationType, Doc, Store } from './types'
+import { DEFAULT_PREFS, normalizePrefs } from './prefs'
+import type { ReaderPrefs } from './prefs'
 
 export const STORE_VERSION = 1
 
 export function createEmptyStore(): Store {
-  return { version: STORE_VERSION, docs: [], annotations: [], progress: {} }
+  return { version: STORE_VERSION, docs: [], annotations: [], progress: {}, prefs: { ...DEFAULT_PREFS } }
 }
 
 export function createId(): string {
@@ -75,6 +77,10 @@ export function setProgress(store: Store, docId: string, anchor: Anchor): Store 
   return { ...store, progress: { ...store.progress, [docId]: anchor } }
 }
 
+export function setPrefs(store: Store, patch: Partial<ReaderPrefs>): Store {
+  return { ...store, prefs: normalizePrefs({ ...store.prefs, ...patch }) }
+}
+
 export function serializeStore(store: Store): string {
   return JSON.stringify(store)
 }
@@ -101,7 +107,9 @@ export function deserializeStore(raw: string | null | undefined): Store {
     docs: Array.isArray(candidate.docs) ? candidate.docs.filter(isDoc) : [],
     annotations: Array.isArray(candidate.annotations) ? candidate.annotations.filter(isAnnotation) : [],
     progress: candidate.progress && typeof candidate.progress === 'object' ? candidate.progress : {},
-    lastDocId: typeof candidate.lastDocId === 'string' ? candidate.lastDocId : undefined
+    lastDocId: typeof candidate.lastDocId === 'string' ? candidate.lastDocId : undefined,
+    // 旧版本文件没有 prefs，normalizePrefs 会补全并夹到合法档位
+    prefs: normalizePrefs(candidate.prefs)
   }
 }
 

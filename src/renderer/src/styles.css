@@ -1,16 +1,60 @@
-:root {
+/* ---------- 主题 ---------- */
+
+:root,
+[data-theme='light'] {
   --bg: #faf9f7;
   --panel: #f2f0ec;
   --border: #e2ded6;
   --text: #23201c;
   --text-dim: #7d766c;
+  --body-text: #23201c;
+  --surface: #fff;
   --accent: #b4532a;
   --accent-soft: #f7e5dc;
   --vocab: #ffe9a8;
   --note: #cfe6ff;
   --active: #ffc078;
+  --shadow: rgba(0, 0, 0, 0.14);
+  --hover: rgba(0, 0, 0, 0.04);
   --radius: 8px;
   color-scheme: light;
+}
+
+/* 护眼：降低对比度、偏暖，晚上看不用那么刺眼 */
+[data-theme='sepia'] {
+  --bg: #f4ecd8;
+  --panel: #ece2c9;
+  --border: #dbcfae;
+  --text: #3b3226;
+  --text-dim: #857a63;
+  --body-text: #332c22;
+  --surface: #fbf5e6;
+  --accent: #a05a2c;
+  --accent-soft: #ecdcc0;
+  --vocab: #f0d99a;
+  --note: #cbdcea;
+  --active: #e8bb7a;
+  --shadow: rgba(60, 45, 20, 0.14);
+  --hover: rgba(90, 70, 30, 0.07);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: #1c1b19;
+  --panel: #232220;
+  --border: #35332f;
+  --text: #ddd8cf;
+  --text-dim: #8f887c;
+  --body-text: #d5cfc4;
+  --surface: #26251f;
+  --accent: #d98050;
+  --accent-soft: #3a2c22;
+  --vocab: #6b5a1e;
+  --note: #2c4a63;
+  --active: #8a6320;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --hover: rgba(255, 255, 255, 0.06);
+  color-scheme: dark;
 }
 
 * {
@@ -31,15 +75,13 @@ body {
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
-
 button {
   font: inherit;
-  color: inherit;
+  color: #fff;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: var(--radius, 8px);
   padding: 6px 12px;
   background: var(--accent);
-  color: #fff;
   cursor: pointer;
 }
 
@@ -169,11 +211,11 @@ ul {
 }
 
 .doc-item:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--hover);
 }
 
 .doc-item.active {
-  background: #fff;
+  background: var(--surface);
   border-color: var(--border);
 }
 
@@ -211,7 +253,7 @@ ul {
 }
 
 .tab.active {
-  background: #fff;
+  background: var(--surface);
   color: var(--text);
   border-color: var(--border);
   font-weight: 600;
@@ -230,9 +272,9 @@ ul {
   align-items: flex-start;
   gap: 4px;
   margin-bottom: 6px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius, 8px);
   overflow: hidden;
 }
 
@@ -253,7 +295,7 @@ ul {
 }
 
 .annotation-main:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--hover);
 }
 
 .badge {
@@ -316,9 +358,9 @@ ul {
 .vocab-group {
   margin-bottom: 10px;
   padding: 8px 10px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius, 8px);
 }
 
 .vocab-group.active {
@@ -389,7 +431,7 @@ ul {
   font: inherit;
   font-size: 12px;
   color: inherit;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -469,19 +511,136 @@ ul {
 }
 
 .reader-header {
-  padding: 16px 32px 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 28px 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.reader-title {
+  min-width: 0;
 }
 
 .reader-header h1 {
   margin: 0 0 4px;
   font-size: 16px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .reader-meta {
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/* ---------- 阅读控制条 ---------- */
+
+.reader-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tool {
+  padding: 4px 9px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--border);
+  white-space: nowrap;
+}
+
+.tool:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.tool-value {
+  min-width: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 进度条 ---------- */
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 28px;
+}
+
+.progress-track {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  cursor: pointer;
+  /* 命中区域要比视觉上的细线大得多，否则很难点中 */
+  display: flex;
+  align-items: center;
+}
+
+.progress-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.progress-track:hover::before,
+.progress-track.dragging::before {
+  height: 5px;
+}
+
+.progress-fill {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.progress-track:hover .progress-fill,
+.progress-track.dragging .progress-fill {
+  height: 5px;
+}
+
+.progress-knob {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.progress-track:hover .progress-knob,
+.progress-track.dragging .progress-knob {
+  opacity: 1;
+}
+
+.progress-value {
+  flex: none;
+  min-width: 38px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 .reader-scroll {
@@ -491,16 +650,16 @@ ul {
 }
 
 .reader-body {
-  max-width: 44em;
   margin: 0 auto;
   padding: 28px 32px 60vh;
+  /* font-size / line-height / max-width 由 Reader 按用户偏好内联注入 */
+  color: var(--body-text);
 }
 
 .paragraph {
   margin: 0 0 1.1em;
   font-family: Georgia, 'Songti SC', 'SimSun', serif;
-  font-size: 18px;
-  line-height: 1.85;
+  /* 字号与行高继承 .reader-body，不在这里写死 */
   white-space: pre-wrap;
   cursor: text;
 }
@@ -513,10 +672,10 @@ ul {
   display: flex;
   gap: 4px;
   padding: 4px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  border-radius: var(--radius, 8px);
+  box-shadow: 0 6px 20px var(--shadow);
   z-index: 20;
 }
 
@@ -542,7 +701,7 @@ ul {
   padding: 20px;
   background: var(--bg);
   border-radius: 12px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 20px 50px var(--shadow);
 }
 
 .modal h2 {
@@ -569,9 +728,9 @@ ul {
   padding: 10px;
   font: inherit;
   color: inherit;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius, 8px);
   resize: vertical;
 }
 
@@ -593,8 +752,9 @@ ul {
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 16px;
+  /* 反色：主题切换后依然可读（深色主题下 --text 是浅色） */
   background: var(--text);
-  color: #fff;
+  color: var(--bg);
   border-radius: 999px;
   font-size: 12px;
   z-index: 40;

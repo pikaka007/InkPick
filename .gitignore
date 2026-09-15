@@ -10,3 +10,4 @@ Thumbs.db
 .logs/
 *.tsbuildinfo
 .dict-src/
+.shots/
