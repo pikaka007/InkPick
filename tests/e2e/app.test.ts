@@ -695,6 +695,129 @@ describe('侧栏', () => {
   })
 })
 
+describe('搜索', () => {
+  const currentMatch = async (): Promise<string> =>
+    page.evaluate(() => {
+      const highlight = (CSS as unknown as { highlights?: Map<string, Set<Range>> }).highlights?.get(
+        'inkpick-search-current'
+      )
+      return highlight ? [...highlight][0]?.toString() ?? '' : ''
+    })
+
+  const allMatchCount = async (): Promise<number> =>
+    page.evaluate(() => {
+      const highlight = (CSS as unknown as { highlights?: Map<string, Set<Range>> }).highlights?.get('inkpick-search')
+      return highlight ? [...highlight].length : 0
+    })
+
+  /**
+   * 当前命中在文中的位置，编码成可比较的数：段序号 * 10000 + 段内偏移。
+   * 不能比文本（都是同一个词），也不能比纵坐标（同一行的两处 Y 相同）。
+   */
+  const currentMatchPosition = async (): Promise<number> =>
+    page.evaluate(() => {
+      const highlight = (CSS as unknown as { highlights?: Map<string, Set<Range>> }).highlights?.get(
+        'inkpick-search-current'
+      )
+      const range = highlight ? [...highlight][0] : undefined
+      if (!range) return -1
+      const node = range.startContainer
+      const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+      const segment = element?.closest('[data-seg]')
+      if (!segment) return -1
+      return Number(segment.getAttribute('data-seg')) * 10000 + range.startOffset
+    })
+
+  it('点搜索才打开输入框', async () => {
+    expect(await page.locator('.search-input').count()).toBe(0)
+    await page.getByRole('button', { name: '搜索' }).click()
+    expect(await page.locator('.search-input').count()).toBe(1)
+  })
+
+  it('输入后显示命中数与当前位置', async () => {
+    await page.locator('.search-input').fill('habit')
+
+    // 示例文本里 habit 只出现一次
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('1/1')
+    expect(await allMatchCount()).toBe(1)
+    expect(await currentMatch()).toContain('habit')
+  })
+
+  it('命中多处时能上下跳，并绕回', async () => {
+    await page.locator('.search-input').fill('the')
+
+    const total = await allMatchCount()
+    expect(total).toBeGreaterThan(3)
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`1/${total}`)
+
+    await page.getByRole('button', { name: '下一个匹配' }).click()
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`2/${total}`)
+
+    // 上一个回到第一处
+    await page.getByRole('button', { name: '上一个匹配' }).click()
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`1/${total}`)
+
+    // 从第一处往前绕到最后一处
+    await page.getByRole('button', { name: '上一个匹配' }).click()
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`${total}/${total}`)
+  })
+
+  it('点下一个后当前命中会真的挪到下一处', async () => {
+    // 先换个词再换回来，确保从第一个命中重新开始
+    // （上一条测试结束时停在最后一处，不重置的话「下一个」是绕回第一处）
+    await page.locator('.search-input').fill('habit')
+    await page.locator('.search-input').fill('the')
+
+    const first = await currentMatchPosition()
+    expect(first).toBeGreaterThan(0)
+
+    await page.getByRole('button', { name: '下一个匹配' }).click()
+    await expect.poll(currentMatchPosition).toBeGreaterThan(first)
+  })
+
+  it('回车等于下一个，Shift+回车等于上一个', async () => {
+    await page.locator('.search-input').fill('read')
+    const total = await allMatchCount()
+    expect(total).toBeGreaterThan(1)
+
+    await page.locator('.search-input').press('Enter')
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`2/${total}`)
+
+    await page.locator('.search-input').press('Shift+Enter')
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe(`1/${total}`)
+  })
+
+  it('搜不到时明确说「无匹配」，不留上一轮的高亮', async () => {
+    await page.locator('.search-input').fill('zzzzqqqq')
+
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('无匹配')
+    expect(await allMatchCount()).toBe(0)
+    expect(await currentMatch()).toBe('')
+  })
+
+  it('大小写不敏感', async () => {
+    await page.locator('.search-input').fill('HABIT')
+    await expect.poll(async () => page.locator('.search-count').textContent()).toBe('1/1')
+  })
+
+  it('Esc 关闭并清空搜索', async () => {
+    await page.locator('.search-input').fill('habit')
+    await page.locator('.search-input').press('Escape')
+
+    await expect.poll(async () => page.locator('.search-input').count()).toBe(0)
+    expect(await allMatchCount()).toBe(0)
+  })
+
+  it('Ctrl+F 能直接打开搜索', async () => {
+    await page.keyboard.press('Control+f')
+    await expect.poll(async () => page.locator('.search-input').count()).toBe(1)
+
+    // 收尾，后面的测试不依赖搜索框
+    await page.locator('.search-input').press('Escape')
+    await expect.poll(async () => page.locator('.search-input').count()).toBe(0)
+  })
+})
+
 describe('看', () => {
   it('点某一次收藏能跳回原文，并标出当前位置', async () => {
     const group = await vocabGroup('word')

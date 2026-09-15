@@ -14,6 +14,7 @@ import {
   stepFontSize
 } from '@core/prefs'
 import type { ReaderPrefs } from '@core/prefs'
+import { findMatches, formatMatchPosition, stepMatchIndex } from '@core/search'
 import { splitParagraphs } from '@core/text'
 import type { Annotation, Doc } from '@core/types'
 import { applyHighlight, clearHighlight, highlightSupported } from '@renderer/highlight'
@@ -76,6 +77,14 @@ export default function Reader({
   const [noteText, setNoteText] = useState('')
   const [ratio, setRatio] = useState(0)
 
+  /** 搜索。query 为空时不算在搜 */
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [matchIndex, setMatchIndex] = useState(0)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  const search = useMemo(() => findMatches(doc.content, query), [doc.content, query])
+
   const segments = useMemo(() => splitParagraphs(doc.content), [doc.content])
   const starts = useMemo(() => segmentStarts(segments), [segments])
 
@@ -132,6 +141,66 @@ export default function Reader({
     }
     return undefined
   }, [jump, starts])
+
+  // 换了查询词就从第一个命中重新开始
+  useEffect(() => {
+    setMatchIndex(0)
+  }, [query])
+
+  // 把所有命中画成高亮，当前那个更明显
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root || !highlightSupported()) return
+
+    const ranges = search.matches
+      .map((match) => rangeForOffsets(root, starts, match))
+      .filter((range): range is Range => range !== null)
+    applyHighlight('inkpick-search', ranges)
+
+    const current = search.matches[matchIndex]
+    const currentRange = current ? rangeForOffsets(root, starts, current) : null
+    applyHighlight('inkpick-search-current', currentRange ? [currentRange] : [])
+
+    return () => {
+      clearHighlight('inkpick-search')
+      clearHighlight('inkpick-search-current')
+    }
+  }, [search, matchIndex, starts])
+
+  // 跳到当前命中
+  useEffect(() => {
+    const root = rootRef.current
+    const current = search.matches[matchIndex]
+    if (!root || !current) return
+    elementAtOffset(root, starts, current.start)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [search, matchIndex, starts])
+
+  const stepSearch = useCallback(
+    (direction: 1 | -1) => {
+      setMatchIndex((index) => stepMatchIndex(index, search.matches.length, direction))
+    },
+    [search.matches.length]
+  )
+
+  const closeSearch = (): void => {
+    setSearchOpen(false)
+    setQuery('')
+  }
+
+  // Ctrl/⌘+F 打开搜索
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
+      event.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus()
+  }, [searchOpen])
 
   const handleScroll = useCallback(() => {
     const container = scrollRef.current
@@ -222,12 +291,73 @@ export default function Reader({
           <h1>{doc.title}</h1>
           <span className="reader-meta">
             {doc.content.length.toLocaleString()} 字符 · {annotations.length} 条标注
+            {search.truncated ? ' · 命中太多，只显示前 2000 处' : ''}
             {highlightSupported() ? '' : ' · 当前环境不支持高亮'}
           </span>
         </div>
 
         <div className="reader-tools">
           <SidebarToggle collapsed={sidebarCollapsed} onToggle={onToggleSidebar} />
+
+          {searchOpen ? (
+            <div className="search-box">
+              <input
+                ref={searchInputRef}
+                className="search-input"
+                placeholder="在本文中搜索"
+                aria-label="在本文中搜索"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    stepSearch(event.shiftKey ? -1 : 1)
+                  }
+                  if (event.key === 'Escape') closeSearch()
+                }}
+              />
+              <span className="search-count">
+                {query.trim() === ''
+                  ? ''
+                  : search.matches.length === 0
+                    ? '无匹配'
+                    : `${formatMatchPosition(matchIndex, search.matches.length)}${search.truncated ? '+' : ''}`}
+              </span>
+              <button
+                type="button"
+                className="tool"
+                title="上一个（Shift+Enter）"
+                aria-label="上一个匹配"
+                disabled={search.matches.length === 0}
+                onClick={() => stepSearch(-1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="tool"
+                title="下一个（Enter）"
+                aria-label="下一个匹配"
+                disabled={search.matches.length === 0}
+                onClick={() => stepSearch(1)}
+              >
+                ↓
+              </button>
+              <button type="button" className="tool" title="关闭搜索（Esc）" aria-label="关闭搜索" onClick={closeSearch}>
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="tool"
+              title="搜索（Ctrl/⌘+F）"
+              aria-label="搜索"
+              onClick={() => setSearchOpen(true)}
+            >
+              搜索
+            </button>
+          )}
 
           <button
             type="button"

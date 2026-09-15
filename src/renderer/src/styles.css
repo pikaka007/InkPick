@@ -14,6 +14,8 @@
   --vocab: #ffe9a8;
   --note: #cfe6ff;
   --active: #ffc078;
+  --search: #ffd9e2;
+  --search-current: #ff9d6b;
   --shadow: rgba(0, 0, 0, 0.14);
   --hover: rgba(0, 0, 0, 0.04);
   --radius: 8px;
@@ -34,6 +36,8 @@
   --vocab: #f0d99a;
   --note: #cbdcea;
   --active: #e8bb7a;
+  --search: #eed3c8;
+  --search-current: #e0996a;
   --shadow: rgba(60, 45, 20, 0.14);
   --hover: rgba(90, 70, 30, 0.07);
   color-scheme: light;
@@ -52,6 +56,8 @@
   --vocab: #6b5a1e;
   --note: #2c4a63;
   --active: #8a6320;
+  --search: #5c3346;
+  --search-current: #a35a2c;
   --shadow: rgba(0, 0, 0, 0.5);
   --hover: rgba(255, 255, 255, 0.06);
   color-scheme: dark;
@@ -654,6 +660,46 @@ ul {
   max-width: 100%;
 }
 
+/* ---------- 搜索 ---------- */
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+}
+
+.search-input {
+  width: 150px;
+  padding: 3px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.search-count {
+  min-width: 34px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.search-box .tool {
+  padding: 2px 6px;
+  border-color: transparent;
+}
+
 /* ---------- 阅读区 ---------- */
 
 .reader {
@@ -978,6 +1024,16 @@ ul {
 
 ::highlight(inkpick-active) {
   background-color: var(--active);
+}
+
+::highlight(inkpick-search) {
+  background-color: var(--search);
+}
+
+/* 当前命中要能从其他命中里一眼分出来 */
+::highlight(inkpick-search-current) {
+  background-color: var(--search-current);
+  color: #1c1b19;
 }
 
 ::selection {

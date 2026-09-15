@@ -75,6 +75,7 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 | 构建 | `npm run build` |
 | 重建词库 | `npm run dict:build`（需 `.dict-src/` 源数据，见 docs/DICTIONARY.md） |
 | 截图 | `npm run shot`（产物在 `.shots/`） |
+| 文档体检 | `npm run check:docs`（查有没有被 shell 吃掉的字符） |
 | Lint | **尚未接入** —— 补上之前不要假装跑过 |
 
 改动后的最低要求：
@@ -110,7 +111,8 @@ src/core/       纯 TS，无框架无 DOM 依赖 —— 业务逻辑全在这里
   dictionary.ts 词典解析、查词、词形还原
   vocab.ts      单词本分组（按 lemma 合并）
   senses.ts     释义收敛（去领域标记 / 限制义项与近义）
-  prefs.ts      阅读偏好档位（字号/行距/行宽/主题）与进度换算
+  prefs.ts      阅读偏好档位（字号/行距/行宽/主题/侧栏）与进度换算
+  search.ts     文内搜索（命中上限、循环跳转）
   csv.ts        ECDICT 的 CSV 解析（容错）
 src/main/       Electron 主进程：窗口、IPC、文件读写、词典
 src/preload/    contextBridge 最小 API
@@ -126,6 +128,9 @@ scripts/        dict:build 词库构建脚本
 - 业务逻辑一律放在 `core/`，保持纯 TS、可单测；`shell/` 只做渲染、文件访问与 IPC。
 - 遵循项目内已确立的分层与命名风格；新目录/新依赖先说明理由。
 - 依赖新增需在汇报中列出。
+- **不要把含中文 / emoji / 反引号的文本写进 `bash -c "node -e ..."` 这类脚本里**：
+  反引号会被 shell 当命令替换（会把 Markdown 链接文字吃掉），emoji 会被换成 `?`。
+  改文档用编辑工具直接改文件；改动后用 `npm run check:docs` 兜底体检。
 
 ## 汇报格式
 
