@@ -78,10 +78,6 @@ export default function Reader({
 
   const search = useMemo(() => findMatches(doc.content, query), [doc.content, query])
 
-  /** 阅读设置面板 */
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const settingsRef = useRef<HTMLDivElement>(null)
-
   const segments = useMemo(() => splitParagraphs(doc.content), [doc.content])
   const starts = useMemo(() => segmentStarts(segments), [segments])
 
@@ -143,17 +139,6 @@ export default function Reader({
   useEffect(() => {
     setMatchIndex(-1)
   }, [query])
-
-  // 点面板外面关闭设置
-  useEffect(() => {
-    if (!settingsOpen) return
-    const onPointerDown = (event: PointerEvent): void => {
-      if (settingsRef.current?.contains(event.target as Node)) return
-      setSettingsOpen(false)
-    }
-    window.addEventListener('pointerdown', onPointerDown)
-    return () => window.removeEventListener('pointerdown', onPointerDown)
-  }, [settingsOpen])
 
   // 把所有命中画成高亮，当前那个更明显
   useEffect(() => {
@@ -389,7 +374,7 @@ export default function Reader({
                 aria-label="回到原处"
                 onClick={returnToOrigin}
               >
-                ⇤
+                回到原处
               </button>
               <button type="button" className="tool" title="关闭搜索（Esc）" aria-label="关闭搜索" onClick={closeSearch}>
                 ✕
@@ -427,18 +412,8 @@ export default function Reader({
             A+
           </button>
 
-          <div className="settings-wrap" ref={settingsRef}>
-            <button
-              type="button"
-              className={settingsOpen ? 'tool active' : 'tool'}
-              title="阅读设置"
-              aria-label="阅读设置"
-              aria-expanded={settingsOpen}
-              onClick={() => setSettingsOpen((open) => !open)}
-            >
-              Aa
-            </button>
-            {settingsOpen && <ReaderSettings prefs={prefs} onChange={onPrefsChange} />}
+          <div className="settings-wrap">
+            <ReaderSettings prefs={prefs} onChange={onPrefsChange} />
           </div>
         </div>
       </header>

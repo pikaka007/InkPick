@@ -48,6 +48,11 @@ export const LINE_HEIGHT_LABELS: Record<string, string> = {
   '2.1': '宽松'
 }
 
+/** 工具栏上的短标签：一行内要能放得下四组开关 */
+export const LINE_HEIGHT_SHORT: Record<string, string> = { '1.6': '紧', '1.85': '标', '2.1': '松' }
+export const MEASURE_SHORT: Record<Measure, string> = { narrow: '窄', medium: '中', wide: '宽' }
+export const THEME_SHORT: Record<Theme, string> = { light: '浅', sepia: '护', dark: '深' }
+
 export function lineHeightLabel(value: number): string {
   return LINE_HEIGHT_LABELS[String(value)] ?? String(value)
 }

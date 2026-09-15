@@ -8,7 +8,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { _electron as electron } from 'playwright-core'
 import type { ElectronApplication, Page } from 'playwright-core'
 import { parseCsvRecords } from '../../src/core/csv'
@@ -378,37 +378,25 @@ describe('阅读体验', () => {
   const appBackground = (): Promise<string> =>
     page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
-  // 设置面板浮在正文上方，留着会挡住后面的点击
-  afterEach(async () => {
-    if (await page.locator('.settings-panel').count()) {
-      await page.locator('.reader-body').click({ position: { x: 5, y: 5 } })
-      await expect.poll(async () => page.locator('.settings-panel').count()).toBe(0)
+  // 设置现在全在工具栏上，不需要「关面板」了
+
+  it('四组设置都在工具栏上，一次点击到位', async () => {
+    // 字号：微调用 A- / A+
+    expect(await page.getByRole('button', { name: '放大字号' }).count()).toBe(1)
+    expect(await page.getByRole('button', { name: '缩小字号' }).count()).toBe(1)
+
+    // 行距 / 行宽 / 主题：每个选项一个按钮，不用先展开面板
+    for (const label of ['行距 紧凑', '行距 标准', '行距 宽松', '行宽 窄', '行宽 中', '行宽 宽', '主题 浅色', '主题 护眼', '主题 深色']) {
+      expect(await page.getByRole('button', { name: label }).count(), label).toBe(1)
     }
+
+    // 不再有需要先打开的面板
+    expect(await page.locator('.settings-panel').count()).toBe(0)
   })
 
-  /** 打开阅读设置面板 */
-  const openSettings = async (): Promise<void> => {
-    if ((await page.locator('.settings-panel').count()) === 0) {
-      await page.getByRole('button', { name: '阅读设置' }).click()
-      await page.waitForSelector('.settings-panel')
-    }
-  }
-
-  it('阅读设置是一个面板，而不是一排循环切换的按钮', async () => {
-    await openSettings()
-
-    for (const name of ['字号', '行距', '行宽', '主题']) {
-      expect(await page.getByLabel(name, { exact: true }).count(), `${name} 下拉框`).toBe(1)
-    }
-
-    // 头部不再有几个「每点一次换一个值」的按钮
-    expect(await page.getByRole('button', { name: /^行距/ }).count()).toBe(0)
-    expect(await page.getByRole('button', { name: /^主题/ }).count()).toBe(0)
-  })
-
-  it('点面板外面会关掉设置', async () => {
-    await page.locator('.reader-body').click({ position: { x: 5, y: 5 } })
-    await expect.poll(async () => page.locator('.settings-panel').count()).toBe(0)
+  it('当前档位在工具栏上能看出来', async () => {
+    expect(await page.getByRole('button', { name: '主题 浅色' }).getAttribute('aria-pressed')).toBe('true')
+    expect(await page.getByRole('button', { name: '主题 深色' }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('放大字号会真的改变正文字号', async () => {
@@ -426,45 +414,38 @@ describe('阅读体验', () => {
     await expect.poll(bodyFontSize).toBe('21px')
   })
 
-  it('下拉框能直接选到任意一档，不用按顺序点', async () => {
-    await openSettings()
-
-    // 从最大字号直接跳到最小，不用点六次
-    await page.getByLabel('字号', { exact: true }).selectOption('15')
-    await expect.poll(bodyFontSize).toBe('15px')
-
-    await page.getByLabel('字号', { exact: true }).selectOption('21')
-    await expect.poll(bodyFontSize).toBe('21px')
-  })
-
-  it('行距下拉框会改变行高', async () => {
-    await openSettings()
+  it('点行距按钮直接切到那一档，不用按顺序转一圈', async () => {
     const before = await bodyLineHeight()
 
-    await page.getByLabel('行距', { exact: true }).selectOption('1.6')
+    await page.getByRole('button', { name: '行距 紧凑' }).click()
     await expect.poll(bodyLineHeight).not.toBe(before)
     expect(parseFloat(await bodyLineHeight())).toBeLessThan(parseFloat(before))
+
+    // 直接跳到另一档，中间那档不需要经过
+    await page.getByRole('button', { name: '行距 宽松' }).click()
+    await expect.poll(async () => parseFloat(await bodyLineHeight())).toBeGreaterThan(parseFloat(before))
   })
 
-  it('行宽下拉框会改变正文宽度', async () => {
-    await openSettings()
+  it('点行宽按钮会改变正文宽度', async () => {
     const before = await bodyWidth()
 
-    await page.getByLabel('行宽', { exact: true }).selectOption('wide')
+    await page.getByRole('button', { name: '行宽 宽' }).click()
     await expect.poll(bodyWidth).toBeGreaterThan(before)
+
+    await page.getByRole('button', { name: '行宽 窄' }).click()
+    await expect.poll(bodyWidth).toBeLessThan(before)
   })
 
-  it('主题下拉框会换掉整页配色', async () => {
-    await openSettings()
+  it('点主题按钮会换掉整页配色', async () => {
     const light = await appBackground()
     expect(await theme()).toBe('light')
 
-    await page.getByLabel('主题', { exact: true }).selectOption('sepia')
+    await page.getByRole('button', { name: '主题 护眼' }).click()
     await expect.poll(theme).toBe('sepia')
     const sepia = await appBackground()
     expect(sepia).not.toBe(light)
 
-    await page.getByLabel('主题', { exact: true }).selectOption('dark')
+    await page.getByRole('button', { name: '主题 深色' }).click()
     await expect.poll(theme).toBe('dark')
     expect(await appBackground()).not.toBe(sepia)
   })
@@ -524,7 +505,8 @@ describe('阅读体验', () => {
     const raw = await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')
     const persisted = JSON.parse(raw) as { prefs?: Record<string, unknown> }
 
-    expect(persisted.prefs).toMatchObject({ fontSize: 21, theme: 'dark', measure: 'wide' })
+    // 行宽/行距/主题停在前面几个用例最后点的那一档
+    expect(persisted.prefs).toMatchObject({ fontSize: 21, lineHeight: 2.1, measure: 'narrow', theme: 'dark' })
     await launch()
   })
 

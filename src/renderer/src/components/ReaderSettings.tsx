@@ -1,10 +1,12 @@
 import type { JSX } from 'react'
 import {
-  FONT_SIZES,
   LINE_HEIGHTS,
+  LINE_HEIGHT_SHORT,
   MEASURE_LABELS,
+  MEASURE_SHORT,
   MEASURES,
   THEME_LABELS,
+  THEME_SHORT,
   THEMES,
   lineHeightLabel
 } from '@core/prefs'
@@ -16,74 +18,64 @@ interface ReaderSettingsProps {
 }
 
 /**
- * 阅读设置面板。
+ * 阅读设置：一行里的三组开关（行距 / 行宽 / 主题）。
  *
- * 用原生 select 而不是自绘下拉：跨平台行为一致、键盘可用、屏幕阅读器能读，
- * 也不用自己实现「点外面关闭 / Esc 关闭 / 方向键选择」。样式上确实朴素，
- * 但这几个设置一辈子改不了几次，值不值得为好看自己造一个轮子是另一回事 —— 不值。
+ * 这里是**每个选项一个按钮**，不是「点一下换一个值」，也不是下拉框 ——
+ * 前者要点很多次还记不住下一档是什么，后者要点两下（先展开再选）。
+ * 阅读设置就是拿来反复试到手感对的，一次点击到位最要紧。
+ *
+ * 字号在工具栏上是 A- / A+，因为它需要微调，不需要穷举。
  */
 export default function ReaderSettings({ prefs, onChange }: ReaderSettingsProps): JSX.Element {
   return (
-    <div className="settings-panel" role="dialog" aria-label="阅读设置">
-      <label className="setting-row">
-        <span>字号</span>
-        <select
-          aria-label="字号"
-          value={String(prefs.fontSize)}
-          onChange={(event) => onChange({ fontSize: Number(event.target.value) })}
-        >
-          {FONT_SIZES.map((size) => (
-            <option key={size} value={size}>
-              {size}px
-            </option>
-          ))}
-        </select>
-      </label>
+    <>
+      <div className="seg" role="group" aria-label="行距">
+        {LINE_HEIGHTS.map((height) => (
+          <button
+            key={height}
+            type="button"
+            className={prefs.lineHeight === height ? 'seg-item active' : 'seg-item'}
+            title={`行距 ${lineHeightLabel(height)}（${height}）`}
+            aria-label={`行距 ${lineHeightLabel(height)}`}
+            aria-pressed={prefs.lineHeight === height}
+            onClick={() => onChange({ lineHeight: height })}
+          >
+            {LINE_HEIGHT_SHORT[String(height)]}
+          </button>
+        ))}
+      </div>
 
-      <label className="setting-row">
-        <span>行距</span>
-        <select
-          aria-label="行距"
-          value={String(prefs.lineHeight)}
-          onChange={(event) => onChange({ lineHeight: Number(event.target.value) })}
-        >
-          {LINE_HEIGHTS.map((height) => (
-            <option key={height} value={height}>
-              {lineHeightLabel(height)}（{height}）
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="seg" role="group" aria-label="行宽">
+        {MEASURES.map((measure) => (
+          <button
+            key={measure}
+            type="button"
+            className={prefs.measure === measure ? 'seg-item active' : 'seg-item'}
+            title={`行宽 ${MEASURE_LABELS[measure]}`}
+            aria-label={`行宽 ${MEASURE_LABELS[measure]}`}
+            aria-pressed={prefs.measure === measure}
+            onClick={() => onChange({ measure })}
+          >
+            {MEASURE_SHORT[measure]}
+          </button>
+        ))}
+      </div>
 
-      <label className="setting-row">
-        <span>行宽</span>
-        <select
-          aria-label="行宽"
-          value={prefs.measure}
-          onChange={(event) => onChange({ measure: event.target.value as ReaderPrefs['measure'] })}
-        >
-          {MEASURES.map((measure) => (
-            <option key={measure} value={measure}>
-              {MEASURE_LABELS[measure]}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="setting-row">
-        <span>主题</span>
-        <select
-          aria-label="主题"
-          value={prefs.theme}
-          onChange={(event) => onChange({ theme: event.target.value as ReaderPrefs['theme'] })}
-        >
-          {THEMES.map((theme) => (
-            <option key={theme} value={theme}>
-              {THEME_LABELS[theme]}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
+      <div className="seg" role="group" aria-label="主题">
+        {THEMES.map((theme) => (
+          <button
+            key={theme}
+            type="button"
+            className={prefs.theme === theme ? 'seg-item active' : 'seg-item'}
+            title={`主题 ${THEME_LABELS[theme]}`}
+            aria-label={`主题 ${THEME_LABELS[theme]}`}
+            aria-pressed={prefs.theme === theme}
+            onClick={() => onChange({ theme })}
+          >
+            {THEME_SHORT[theme]}
+          </button>
+        ))}
+      </div>
+    </>
   )
 }

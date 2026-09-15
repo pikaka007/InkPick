@@ -4,12 +4,19 @@ import {
   DEFAULT_SIDEBAR_WIDTH,
   FONT_SIZES,
   LINE_HEIGHTS,
+  LINE_HEIGHT_LABELS,
+  LINE_HEIGHT_SHORT,
   MEASURES,
+  MEASURE_LABELS,
+  MEASURE_SHORT,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   THEMES,
+  THEME_LABELS,
+  THEME_SHORT,
   clampSidebarWidth,
   formatPercent,
+  lineHeightLabel,
   nearestFontSize,
   nearestLineHeight,
   nextInCycle,
@@ -65,6 +72,30 @@ describe('nearestFontSize / nearestLineHeight', () => {
   it('行高同理', () => {
     expect(nearestLineHeight(1.7)).toBe(1.6)
     expect(nearestLineHeight(2)).toBe(2.1)
+  })
+})
+
+describe('档位标签', () => {
+  it('每个行高都有长名与短名', () => {
+    for (const height of LINE_HEIGHTS) {
+      expect(LINE_HEIGHT_LABELS[String(height)], `行高 ${height}`).toBeTruthy()
+      expect(LINE_HEIGHT_SHORT[String(height)], `行高 ${height}`).toBeTruthy()
+    }
+    expect(lineHeightLabel(1.85)).toBe('标准')
+  })
+
+  it('每个行宽档都有长名与短名', () => {
+    for (const measure of MEASURES) {
+      expect(MEASURE_LABELS[measure]).toBeTruthy()
+      expect(MEASURE_SHORT[measure]).toBeTruthy()
+    }
+  })
+
+  it('每个主题都有长名与短名', () => {
+    for (const theme of THEMES) {
+      expect(THEME_LABELS[theme]).toBeTruthy()
+      expect(THEME_SHORT[theme]).toBeTruthy()
+    }
   })
 })
 

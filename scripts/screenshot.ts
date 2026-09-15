@@ -101,13 +101,7 @@ await setTheme('dark')
 await page.waitForTimeout(200)
 await shoot('dark-with-toolbar')
 
-// 阅读设置面板
-await setTheme('light')
-await page.getByRole('button', { name: '阅读设置' }).click()
-await page.waitForSelector('.settings-panel')
-await page.waitForTimeout(200)
-await shoot('settings-panel')
-await page.locator('.reader-body').click({ position: { x: 5, y: 5 } })
+// 搜索态：全部命中淡高亮 + 当前命中强高亮
 
 // 搜索态：全部命中淡高亮 + 当前命中强高亮
 await page.getByRole('button', { name: '搜索', exact: true }).click()
