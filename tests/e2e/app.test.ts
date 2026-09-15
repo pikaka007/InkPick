@@ -156,6 +156,15 @@ describe('钉 · 词典', () => {
     expect(await group.locator('.occurrence-form').textContent()).toBe('words')
   })
 
+  it('释义经过收敛，不会把整段词典原文摆上来', async () => {
+    const group = await vocabGroup('word')
+    const definition = (await group.locator('.vocab-definition').textContent()) ?? ''
+
+    expect(definition).not.toContain('[')
+    expect(definition.length).toBeLessThan(60)
+    expect(definition).toContain('词')
+  })
+
   it('笔记不进单词本', async () => {
     await selectInParagraph(1, 'trained to skim')
     await page.getByRole('button', { name: '＋ 笔记' }).click()

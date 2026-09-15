@@ -8,6 +8,7 @@
  * 所以：按 lemma 分组，一组一条词条，下面挂多次收藏与各自的上下文。
  */
 import type { Annotation, LookupStatus, Sense } from './types'
+import { formatSenses } from './senses'
 
 export interface VocabGroup {
   /** 分组键 = lemma 小写 */
@@ -80,14 +81,9 @@ export function groupVocab(annotations: Annotation[]): VocabGroup[] {
   return [...groups.values()].sort((a, b) => a.items[0].createdAt - b.items[0].createdAt)
 }
 
-/** 单词本里显示什么释义：优先词典，其次手写 */
+/** 单词本里显示什么释义：优先词典（已收敛），其次手写 */
 export function groupDefinition(group: VocabGroup): string {
-  if (group.senses.length > 0) {
-    return group.senses
-      .slice(0, 3)
-      .map((sense) => (sense.pos ? `${sense.pos} ${sense.translation}` : sense.translation))
-      .join('；')
-  }
+  if (group.senses.length > 0) return formatSenses(group.senses)
   return group.manualDefinition
 }
 

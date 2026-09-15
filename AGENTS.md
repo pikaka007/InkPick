@@ -95,6 +95,7 @@ src/core/       纯 TS，无框架无 DOM 依赖 —— 业务逻辑全在这里
   anchor.ts     定位 / 重定位
   dictionary.ts 词典解析、查词、词形还原
   vocab.ts      单词本分组（按 lemma 合并）
+  senses.ts     释义收敛（去领域标记 / 限制义项与近义）
   csv.ts        ECDICT 的 CSV 解析（容错）
 src/main/       Electron 主进程：窗口、IPC、文件读写、词典
 src/preload/    contextBridge 最小 API

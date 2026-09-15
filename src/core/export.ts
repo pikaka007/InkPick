@@ -7,6 +7,7 @@
 import type { Annotation, Doc } from './types'
 import type { VocabGroup } from './vocab'
 import { groupDefinition, groupVocab } from './vocab'
+import { formatSenses } from './senses'
 
 /* ---------- CSV ---------- */
 
@@ -57,13 +58,12 @@ export function vocabToAnkiCsv(groups: VocabGroup[], titles: DocTitles): string 
   return [header, ...rows].join('\n') + '\n'
 }
 
-/** 导出时给全部义项，不像界面上只显示前三条 */
+/**
+ * 导出用的释义。与界面共用同一套收敛规则（见 core/senses.ts）。
+ * 存储里的 `senses` 是完整的，所以这只是展示层的取舍，不是丢数据。
+ */
 function definitionOf(group: VocabGroup): string {
-  if (group.senses.length > 0) {
-    return group.senses
-      .map((sense) => (sense.pos ? `${sense.pos} ${sense.translation}` : sense.translation))
-      .join('；')
-  }
+  if (group.senses.length > 0) return formatSenses(group.senses)
   return group.manualDefinition
 }
 
