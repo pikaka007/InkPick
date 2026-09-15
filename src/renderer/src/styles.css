@@ -19,6 +19,8 @@
   --shadow: rgba(0, 0, 0, 0.14);
   --hover: rgba(0, 0, 0, 0.04);
   --radius: 8px;
+  --scrollbar: #d8d2c8;
+  --scrollbar-hover: #b6afa2;
   color-scheme: light;
 }
 
@@ -40,6 +42,8 @@
   --search-current: #e0996a;
   --shadow: rgba(60, 45, 20, 0.14);
   --hover: rgba(90, 70, 30, 0.07);
+  --scrollbar: #ced0ae;
+  --scrollbar-hover: #aea886;
   color-scheme: light;
 }
 
@@ -60,11 +64,41 @@
   --search-current: #a35a2c;
   --shadow: rgba(0, 0, 0, 0.5);
   --hover: rgba(255, 255, 255, 0.06);
+  --scrollbar: #3f3d38;
+  --scrollbar-hover: #5c5850;
   color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/*
+ * 滚动条：原生样式（尤其深色主题下的高亮灰条）和这套界面不搭。
+ * 用透明边框 + background-clip 做出「看起来细、实际可拖区域够宽」的效果 ——
+ * 真把宽度设成 4px 会难看又不准拖。
+ * 正文区例外：它上方有可拖的进度条，滚动条整个隐藏（见 .reader-scroll）。
+ */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  background-clip: content-box;
+  border: 4px solid transparent;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+  background-clip: content-box;
 }
 
 html,
@@ -264,13 +298,19 @@ button.ghost:hover {
 }
 
 .sidebar-section {
+  flex: none;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   overflow-y: auto;
+  /* 文档多了不能把下面的标注区挤没 */
+  max-height: 38%;
 }
 
 .sidebar-section.grow {
   flex: 1;
+  /* flex 子项默认不瘦身，不显式置 0 的话内容会溢出父容器被裁掉 */
+  min-height: 0;
+  max-height: none;
   border-bottom: none;
 }
 

@@ -7,7 +7,7 @@
  * 为什么要它：主题、字号、行宽这类改动，单测和 E2E 只能验证「值变了」，
  * 好不好看最终还得人眼看。CI 里跑不了窗口，所以做成手动工具。
  */
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -115,6 +115,22 @@ await page.locator('.search-input').press('Escape')
 await page.getByRole('button', { name: '隐藏侧栏' }).click()
 await page.waitForTimeout(200)
 await shoot('sidebar-collapsed')
+await page.getByRole('button', { name: '显示侧栏' }).click()
+
+// 书多到侧栏需要滚动 —— 用来看自绘滚动条的样子
+const bulkDir = join(userDataDir, 'bulk')
+await mkdir(bulkDir, { recursive: true })
+for (let i = 1; i <= 14; i++) {
+  const file = join(bulkDir, `book-${String(i).padStart(2, '0')}.txt`)
+  await writeFile(file, `Book ${i}. The word habit appears here. Reading slowly is a habit.\n`, 'utf-8')
+  await app.evaluate(({ dialog }, target) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+  }, file)
+  await page.getByRole('button', { name: '打开 TXT' }).click()
+  await page.waitForTimeout(60)
+}
+await page.waitForTimeout(300)
+await shoot('sidebar-with-scrollbar')
 
 await app.close()
 await rm(userDataDir, { recursive: true, force: true })

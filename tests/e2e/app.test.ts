@@ -1065,3 +1065,51 @@ describe('存', () => {
     expect(await inkpick.locator('.vocab-definition').textContent()).toBe('这个阅读器本身')
   })
 })
+
+/**
+ * 放在最后：这个 describe 会往书库里塞一批文档，
+ * 前面的用例对文档数量有断言，所以不能提前跑。
+ */
+describe('侧栏布局', () => {
+  const sectionBox = async (selector: string) =>
+    page.evaluate((sel) => {
+      const el = document.querySelector(sel) as HTMLElement | null
+      if (!el) return null
+      return {
+        clientHeight: Math.round(el.clientHeight),
+        scrollHeight: Math.round(el.scrollHeight),
+        scrollbarWidth: el.offsetWidth - el.clientWidth
+      }
+    }, selector)
+
+  it('塞进十几本书，文档区不会把标注区挤没', async () => {
+    for (let i = 1; i <= 12; i++) {
+      const file = join(exportDir, `bulk-${i}.txt`)
+      await writeFile(file, `Book number ${i}. The word habit appears here.\n`, 'utf-8')
+      await app.evaluate(({ dialog }, target) => {
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+      }, file)
+      await page.getByRole('button', { name: '打开 TXT' }).click()
+      await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe(`bulk-${i}`)
+    }
+
+    const sidebarHeight = await page.evaluate(
+      () => document.querySelector('.sidebar')!.getBoundingClientRect().height
+    )
+    const docSection = (await sectionBox('.sidebar-section'))!
+    const annotationSection = (await sectionBox('.sidebar-section.grow'))!
+
+    // 文档区被上限夹住，内容超出就自己滚
+    expect(docSection.clientHeight).toBeLessThanOrEqual(Math.round(sidebarHeight * 0.42))
+    expect(docSection.scrollHeight).toBeGreaterThan(docSection.clientHeight)
+
+    // 标注区仍然有可用高度，而不是被压成一条
+    expect(annotationSection.clientHeight).toBeGreaterThan(120)
+  })
+
+  it('侧栏滚动条宽度是可预期的，不再由系统主题决定', async () => {
+    // 自绘滚动条仍然占位，但宽度固定在 12px（原来是系统给的 15px）
+    const docSection = (await sectionBox('.sidebar-section'))!
+    expect(docSection.scrollbarWidth).toBeLessThanOrEqual(12)
+  })
+})
