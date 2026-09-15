@@ -11,3 +11,6 @@ Thumbs.db
 *.tsbuildinfo
 .dict-src/
 .shots/
+
+# 本地笔记（不进仓库）
+PROJECT-NOTES.md
