@@ -2125,7 +2125,7 @@ describe('复习', () => {
     await reveal()
     // 词表里既有从书里收的词（有原句），也可能有手动记的
     const contexts = await page.locator('.review-context').count()
-    const contextsOrManual = contexts + (await page.locator('.review-context.manual').count())
+    const contextsOrManual = contexts + (await page.locator('.review-context-manual').count())
     expect(contextsOrManual).toBeGreaterThan(0)
     expect(await page.locator('.grade').first().isDisabled()).toBe(false)
   })
@@ -2204,5 +2204,161 @@ describe('复习', () => {
     const expected = Math.max(0, DEFAULT_DAILY_NEW - reviewedToday)
     await expect.poll(entryCount).toBe(expected)
     expect(await page.locator('.review-entry').getAttribute('title')).toContain('待复习')
+  })
+})
+
+/** 复习设置（每天新词上限、复习范围）。 */
+describe('复习设置', () => {
+  const entry = () => page.locator('.review-entry')
+  const settingsToggle = () => page.getByRole('button', { name: '复习设置' })
+  const entryCount = async (): Promise<number> => {
+    const text = (await entry().textContent()) ?? ''
+    return Number(text.replace(/[^\d]/g, '')) || 0
+  }
+  const openSettings = async (): Promise<void> => {
+    if ((await page.locator('.review-settings').count()) === 0) {
+      await settingsToggle().click()
+      await page.waitForSelector('.review-settings')
+    }
+  }
+
+  it('设置入口能打开，显示当前的上限与范围', async () => {
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    await openSettings()
+
+    expect(await page.locator('.review-daily-new').inputValue()).toBe('10')
+    expect(await page.locator('.review-settings .tab.active').textContent()).toBe('全部')
+  })
+
+  it('★ 调大每日上限，待复习数立刻跟着变（名额是按范围里已引入的算的）', async () => {
+    await openSettings()
+    const before = await entryCount()
+    expect(before).toBeGreaterThan(0)
+
+    // 上限 0 = 今天只清到期，不引入新词
+    await page.locator('.review-daily-new').fill('0')
+    await expect.poll(entryCount).toBe(0)
+
+    // 调大就会多放进来一些
+    await page.locator('.review-daily-new').fill('50')
+    const more = await entryCount()
+    expect(more).toBeGreaterThan(before)
+
+    await page.locator('.review-daily-new').fill('10')
+    await expect.poll(entryCount).toBe(before)
+  })
+
+  it('上限夹在合法范围里（填超大数不会失控）', async () => {
+    await openSettings()
+    await page.locator('.review-daily-new').fill('999')
+    // 0~50
+    expect(Number(await page.locator('.review-daily-new').inputValue())).toBeLessThanOrEqual(50)
+
+    await page.locator('.review-daily-new').fill('-3')
+    expect(Number(await page.locator('.review-daily-new').inputValue())).toBeGreaterThanOrEqual(0)
+    await page.locator('.review-daily-new').fill('10')
+  })
+
+  it('★ 切成「手动」范围后，只复习手动记的词（书里收的要被排除）', async () => {
+    // 造一个绝对不是手动的词：从一本书里划一个
+    const file = join(exportDir, 'review-source.txt')
+    await writeFile(
+      file,
+      ['We are trained to read closely.', 'Speed feels like progress.', 'Reading is a habit.'].join('\n'),
+      'utf-8'
+    )
+    await app.evaluate(({ dialog }, target) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+    }, file)
+    await page.getByRole('button', { name: '打开 TXT' }).click()
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe('review-source')
+    await collectWord(0, 'trained')
+
+    // 手动词的名单（按词表里带「手动」标记的分组取）
+    const manualWords = (
+      await page
+        .locator('.vocab-group')
+        .filter({ has: page.locator('.badge.manual') })
+        .locator('.vocab-head strong')
+        .allTextContents()
+    ).map((word) => word.toLowerCase())
+    // 前提：刚收的那个词确实不在手动名单里，否则这条测不出东西
+    expect(manualWords.length).toBeGreaterThan(0)
+    expect(manualWords).not.toContain('train')
+
+    await openSettings()
+    // 上限调到远大于词表，数量就只反映范围，不反映名额
+    await page.locator('.review-daily-new').fill('50')
+    await page.locator('.review-settings .tab', { hasText: '全部' }).click()
+    const allCount = await entryCount()
+    expect(allCount).toBeGreaterThan(0)
+
+    await page.locator('.review-settings .tab', { hasText: '手动' }).click()
+    const manualCount = await entryCount()
+    // ★ 关键断言：换到手动范围后，至少少掉了刚从书里收的那一个
+    expect(manualCount).toBeLessThan(allCount)
+
+    // 而且面板里出现的词都在手动名单里
+    await entry().click()
+    await page.waitForSelector('.review-panel')
+    const shown = ((await page.locator('.review-word').textContent()) ?? '').toLowerCase()
+    await page.locator('.review-close').click()
+    expect(manualWords).toContain(shown)
+
+    await openSettings()
+    await page.locator('.review-daily-new').fill('10')
+  })
+
+  it('★ 卡片上的原句可以点开看原文，而且没评完的还在', async () => {
+    // 上一个用例已经导入了 review-source 并从里面收了一个词，
+    // 所以「本书」范围下队列里一定是有原句的词
+    await openSettings()
+    await page.locator('.review-daily-new').fill('50')
+    await page.locator('.review-settings .tab', { hasText: '本书' }).click()
+    await expect.poll(async () => page.locator('.review-settings .tab.active').textContent()).toBe('本书')
+
+    await entry().click()
+    await page.waitForSelector('.review-panel')
+    await page.locator('.review-reveal').click()
+
+    const contexts = await page.locator('button.review-context').count()
+    if (contexts === 0) {
+      // 先把面板关掉再抛：否则它会挡住侧栏，后面的用例全跟着倒
+      await page.locator('.review-close').click()
+      throw new Error('「本书」范围下应该能找到带原句的卡')
+    }
+
+    // 点原句 → 面板收起、跳到原文
+    await page.locator('button.review-context').first().click()
+    await expect.poll(async () => page.locator('.review-panel').count()).toBe(0)
+    // 跳过去之后能返回（复用导航历史）
+    await expect.poll(async () => page.getByRole('button', { name: '返回上一个位置' }).count()).toBe(1)
+    await page.getByRole('button', { name: '返回上一个位置' }).click()
+
+    // 没评完的词还在待复习里，重开面板能接着过
+    await expect.poll(entryCount).toBeGreaterThan(0)
+    await entry().click()
+    await page.waitForSelector('.review-panel')
+    expect(await page.locator('.review-word').count()).toBe(1)
+    await page.locator('.review-close').click()
+  })
+
+  it('设置会写进存档', async () => {
+    await openSettings()
+    await page.locator('.review-settings .tab', { hasText: '手动' }).click()
+    await page.locator('.review-daily-new').fill('6')
+
+    await app.close()
+    const persisted = JSON.parse(await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')) as {
+      reviewSettings: { dailyNew: number; scope: string }
+    }
+    expect(persisted.reviewSettings).toEqual({ dailyNew: 6, scope: 'manual' })
+
+    await launch()
+    await page.waitForSelector('.app')
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    await openSettings()
+    expect(await page.locator('.review-daily-new').inputValue()).toBe('6')
+    expect(await page.locator('.review-settings .tab.active').textContent()).toBe('手动')
   })
 })

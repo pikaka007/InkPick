@@ -1290,6 +1290,73 @@ ul {
   margin-top: 12px;
 }
 
+/* ---------- 复习设置 ---------- */
+
+.review-entry {
+  font-variant-numeric: tabular-nums;
+}
+
+.review-settings-toggle {
+  width: 26px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.review-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+}
+
+.review-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-setting-label {
+  flex: none;
+  width: 52px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.review-setting-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.review-daily-new {
+  width: 62px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.review-daily-new:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 设置区里的范围按钮比筛选行里的小一号，别喧宾夺主 */
+.review-settings .filter-tabs {
+  margin-bottom: 0;
+}
+
+.review-settings .tab {
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
 /* ---------- 复习面板 ---------- */
 
 .review-panel {
@@ -1382,9 +1449,13 @@ ul {
   gap: 4px;
 }
 
-/* 原句：这个词是在哪儿遇到的 —— 别的背单词软件给不了这一行 */
+/* 原句：这个词是在哪儿遇到的 —— 别的背单词软件给不了这一行。
+   做成按钮：点一下去看它在原文里的位置 */
 .review-context {
-  padding-left: 10px;
+  width: 100%;
+  padding: 4px 0 4px 10px;
+  background: transparent;
+  border: none;
   border-left: 2px solid var(--accent-soft);
   font-size: 12px;
   line-height: 1.6;
@@ -1392,9 +1463,18 @@ ul {
   text-align: left;
 }
 
-.review-context.manual {
-  border-left-color: transparent;
-  padding-left: 0;
+.review-context:hover {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: var(--hover);
+}
+
+/* 手动词没有原句，用另一套（不能和可点的 .review-context 同名，
+   否则「找一张有原句的卡」会点到这个不能点的提示上） */
+.review-context-manual {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
   text-align: center;
 }
 

@@ -2,15 +2,20 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_DAILY_NEW,
   DEFAULT_EASE,
+  DEFAULT_REVIEW_SETTINGS,
   MAX_EASE,
   MAX_INTERVAL_DAYS,
+  MAX_DAILY_NEW,
+  MIN_DAILY_NEW,
   MIN_EASE,
   RELEARN_DELAY_MS,
   buildReviewQueue,
   describeNextDue,
+  dueBefore,
   introducedToday,
   isDue,
   nextReview,
+  normalizeReviewSettings,
   queueSize,
   startOfDay
 } from '@core/review'
@@ -196,10 +201,22 @@ describe('buildReviewQueue', () => {
     expect(queue.deferred).toBe(15)
   })
 
-  it('今天已经引入过的新词会占掉名额', () => {
+  it('★ 名额是按当前范围算的：范围外的词不占名额', () => {
+    // 不这么做的话，「全部」范围下复习过 10 个书的词之后，
+    // 切到「手动」范围会一个都不给 —— 用户根本不知道为什么
     const keys = ['new1', 'new2', 'new3']
     const review = {
-      // 今天引入过 2 个
+      outside1: state({ firstAt: NOW }),
+      outside2: state({ firstAt: NOW })
+    }
+    const queue = buildReviewQueue(keys, review, { now: NOW, dailyNewLimit: 3 })
+    expect(queue.fresh).toEqual(['new1', 'new2', 'new3'])
+    expect(queue.deferred).toBe(0)
+  })
+
+  it('同一个范围里今天已经引入过的新词会占掉名额', () => {
+    const keys = ['done1', 'done2', 'new1', 'new2', 'new3']
+    const review = {
       done1: state({ firstAt: startOfDay(NOW) + 1000 }),
       done2: state({ firstAt: startOfDay(NOW) + 2000 })
     }
@@ -213,17 +230,17 @@ describe('buildReviewQueue', () => {
       a: state({ firstAt: NOW }),
       b: state({ firstAt: NOW })
     }
-    const queue = buildReviewQueue(['x'], review, { now: NOW, dailyNewLimit: 2 })
+    const queue = buildReviewQueue(['a', 'b', 'x'], review, { now: NOW, dailyNewLimit: 2 })
     expect(queue.fresh).toEqual([])
     expect(queue.deferred).toBe(1)
   })
 
   it('到期的不受每日上限影响（该复习的不能拖）', () => {
-    const keys = ['due1', 'due2', 'new1']
+    const keys = ['due1', 'due2', 'justDone', 'new1']
     const review = {
       due1: state({ due: NOW - DAY }),
       due2: state({ due: NOW - 2 * DAY }),
-      justDone: state({ firstAt: NOW })
+      justDone: state({ firstAt: NOW, due: NOW + DAY })
     }
     const queue = buildReviewQueue(keys, review, { now: NOW, dailyNewLimit: 1 })
     expect(queue.due).toEqual(['due2', 'due1'])
@@ -247,6 +264,45 @@ describe('buildReviewQueue', () => {
     const review = { a: state({ due: NOW - DAY }) }
     const queue = buildReviewQueue(['a', 'b'], review, { now: NOW })
     expect(queueSize(queue)).toBe(2)
+  })
+})
+
+describe('复习偏好', () => {
+  it('默认值：每天 10 个新词、全部范围', () => {
+    expect(DEFAULT_REVIEW_SETTINGS).toEqual({ dailyNew: DEFAULT_DAILY_NEW, scope: 'all' })
+  })
+
+  it('上限会被夹到合法范围（0 也是有意义的：今天只清到期）', () => {
+    expect(normalizeReviewSettings({ dailyNew: -5 }).dailyNew).toBe(MIN_DAILY_NEW)
+    expect(normalizeReviewSettings({ dailyNew: 999 }).dailyNew).toBe(MAX_DAILY_NEW)
+    expect(normalizeReviewSettings({ dailyNew: 0 }).dailyNew).toBe(0)
+    expect(normalizeReviewSettings({ dailyNew: 12.7 }).dailyNew).toBe(13)
+  })
+
+  it('非法上限退回默认，而不是变成 NaN', () => {
+    expect(normalizeReviewSettings({ dailyNew: Number.NaN }).dailyNew).toBe(DEFAULT_DAILY_NEW)
+    expect(normalizeReviewSettings(undefined).dailyNew).toBe(DEFAULT_DAILY_NEW)
+  })
+
+  it('范围只认三种，其余退回默认', () => {
+    expect(normalizeReviewSettings({ scope: 'manual' }).scope).toBe('manual')
+    expect(normalizeReviewSettings({ scope: 'nope' as never }).scope).toBe('all')
+    expect(normalizeReviewSettings({}).scope).toBe('all')
+  })
+})
+
+describe('dueBefore', () => {
+  it('数出某个时刻之前会到期的个数', () => {
+    const review = {
+      a: state({ due: NOW + 1000 }),
+      b: state({ due: NOW + 2 * DAY })
+    }
+    expect(dueBefore(['a', 'b'], review, NOW + 5000)).toBe(1)
+    expect(dueBefore(['a', 'b'], review, NOW + 3 * DAY)).toBe(2)
+  })
+
+  it('没复习过的词不算到期（它们是「新词」，不是「到期」）', () => {
+    expect(dueBefore(['fresh'], {}, NOW + DAY)).toBe(0)
   })
 })
 

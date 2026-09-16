@@ -32,6 +32,45 @@ export const MAX_INTERVAL_DAYS = 365
 export const RELEARN_DELAY_MS = 5 * 60 * 1000
 /** 每天最多引入多少个新词。这是需要按真实手感调的参数 */
 export const DEFAULT_DAILY_NEW = 10
+/** 上限的合法范围：0 = 今天只清到期，不引入新词 */
+export const MIN_DAILY_NEW = 0
+export const MAX_DAILY_NEW = 50
+
+/**
+ * 复习范围 —— 哪些词参与复习。
+ *
+ * all    全部词（默认）
+ * doc    只看当前这本书里的词（读大部头时不想被别的书的词打扰）
+ * manual 只看手动记的词（自己那份考试词表）
+ */
+export type ReviewScope = 'all' | 'doc' | 'manual'
+
+export interface ReviewSettings {
+  dailyNew: number
+  scope: ReviewScope
+}
+
+export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = { dailyNew: DEFAULT_DAILY_NEW, scope: 'all' }
+
+export const REVIEW_SCOPES: readonly ReviewScope[] = ['all', 'doc', 'manual']
+export const REVIEW_SCOPE_LABELS: Record<ReviewScope, string> = {
+  all: '全部',
+  doc: '本书',
+  manual: '手动'
+}
+
+/** 手改过的存档 / 旧数据都可能带来非法值，这里收敛回合法范围 */
+export function normalizeReviewSettings(input: Partial<ReviewSettings> | undefined): ReviewSettings {
+  const settings = input ?? {}
+  const dailyNew =
+    typeof settings.dailyNew === 'number' && Number.isFinite(settings.dailyNew)
+      ? Math.round(clamp(settings.dailyNew, MIN_DAILY_NEW, MAX_DAILY_NEW))
+      : DEFAULT_DAILY_NEW
+  const scope = REVIEW_SCOPES.includes(settings.scope as ReviewScope)
+    ? (settings.scope as ReviewScope)
+    : DEFAULT_REVIEW_SETTINGS.scope
+  return { dailyNew, scope }
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -131,11 +170,14 @@ export interface QueueOptions {
 }
 
 /** 今天已经引入过多少个新词。「引入」= 第一次复习，用 firstAt 判断 */
-export function introducedToday(review: Record<string, ReviewState>, now: number): number {
+export function introducedToday(review: Record<string, ReviewState>, now: number, keys?: string[]): number {
   const dayStart = startOfDay(now)
+  // 给了 keys 就只数这些词 —— 名额是按「当前范围」算的，
+  // 不然换个范围会莫名其妙地没名额（早上复习的是别的范围内的词）
+  const entries = keys ? keys.map((key) => review[key]) : Object.values(review)
   let count = 0
-  for (const state of Object.values(review)) {
-    if (state.firstAt >= dayStart) count++
+  for (const state of entries) {
+    if (state && state.firstAt >= dayStart) count++
   }
   return count
 }
@@ -167,12 +209,22 @@ export function buildReviewQueue(
   // 过期最久的先来 —— 那是最快要忘的
   due.sort((a, b) => a.due - b.due)
 
-  const room = Math.max(0, limit - introducedToday(review, options.now))
+  const room = Math.max(0, limit - introducedToday(review, options.now, keys))
   return {
     due: due.map((item) => item.key),
     fresh: fresh.slice(0, room),
     deferred: Math.max(0, fresh.length - room)
   }
+}
+
+/** 到某个时间点为止会到期的个数。复习完那一屏用来说「接下来还有多少」 */
+export function dueBefore(keys: string[], review: Record<string, ReviewState>, timestamp: number): number {
+  let count = 0
+  for (const key of keys) {
+    const state = review[key]
+    if (state && state.due <= timestamp) count++
+  }
+  return count
 }
 
 /** 队列总数：侧栏那个「待复习 N」显示的就是它 */

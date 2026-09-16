@@ -194,6 +194,13 @@ await page.waitForTimeout(150)
 await shoot('review-revealed')
 await page.locator('.review-close').click()
 
+// 复习设置：每天新词上限 + 复习范围
+await page.getByRole('button', { name: '复习设置' }).click()
+await page.waitForSelector('.review-settings')
+await page.waitForTimeout(150)
+await shoot('review-settings')
+await page.getByRole('button', { name: '复习设置' }).click()
+
 await app.close()
 await rm(userDataDir, { recursive: true, force: true })
 console.log(`\n完成，产物在 ${OUT_DIR}`)

@@ -21,12 +21,13 @@ import {
   setPrefs,
   setProgress,
   setReview,
+  setReviewSettings,
   updateAnnotation
 } from '@core/store'
 import type { Anchor, Annotation, Doc, ReviewState, Store } from '@core/types'
 import type { ReaderPrefs } from '@core/prefs'
 import { nextReview } from '@core/review'
-import type { ReviewGrade } from '@core/review'
+import type { ReviewGrade, ReviewSettings } from '@core/review'
 import type { OffsetRange } from './selection'
 
 export type { OffsetRange }
@@ -87,6 +88,8 @@ interface AppState {
   updatePrefs: (patch: Partial<ReaderPrefs>) => void
   /** 复习评一次分。返回新状态，面板据此给一句「下次什么时候见」 */
   gradeReview: (key: string, grade: ReviewGrade) => ReviewState
+  /** 改复习偏好：每天新词上限、复习范围 */
+  updateReviewSettings: (patch: Partial<ReviewSettings>) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => {
@@ -287,7 +290,9 @@ export const useAppStore = create<AppState>((set, get) => {
       const state = nextReview(get().store.review[key], grade, Date.now())
       commit((store) => setReview(store, key, state))
       return state
-    }
+    },
+
+    updateReviewSettings: (patch) => commit((store) => setReviewSettings(store, patch))
   }
 })
 

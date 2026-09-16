@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { chapterLength, truncateTitle } from '@core/chapters'
 import type { Chapter } from '@core/chapters'
+import { MAX_DAILY_NEW, MIN_DAILY_NEW, REVIEW_SCOPES, REVIEW_SCOPE_LABELS } from '@core/review'
+import type { ReviewScope, ReviewSettings } from '@core/review'
 import { annotationText, isManual } from '@core/store'
 import { groupDefinition, groupVocab, needsManualDefinition } from '@core/vocab'
 import type { VocabGroup } from '@core/vocab'
@@ -36,6 +38,10 @@ interface SidebarProps {
   onStartReview: () => void
   /** 侧栏那个「待复习 N」显示的数字 */
   reviewCount: number
+  reviewSettings: ReviewSettings
+  onReviewSettingsChange: (patch: Partial<ReviewSettings>) => void
+  /** 有没有打开书 —— 「本书」这个范围得有书才成立 */
+  scopeHasDoc: boolean
   onOpen: () => void
   onSelectDoc: (docId: string) => void
   onRenameDoc: (docId: string, title: string) => void
@@ -78,6 +84,9 @@ export default function Sidebar({
   onJumpChapter,
   onStartReview,
   reviewCount,
+  reviewSettings,
+  onReviewSettingsChange,
+  scopeHasDoc,
   onRemove,
   onSetDefinition,
   onEditNote,
@@ -85,6 +94,7 @@ export default function Sidebar({
 }: SidebarProps): JSX.Element {
   const [filter, setFilter] = useState<Filter>('all')
   const [navView, setNavView] = useState<NavView>('docs')
+  const [showReviewSettings, setShowReviewSettings] = useState(false)
   const activeChapterRef = useRef<HTMLButtonElement>(null)
   /** 手动记词的草稿。回车存下后清空并把焦点留在输入框，方便连着记 */
   const [wordDraft, setWordDraft] = useState('')
@@ -347,6 +357,16 @@ export default function Sidebar({
           >
             待复习 {reviewCount}
           </button>
+          <button
+            type="button"
+            className={showReviewSettings ? 'tab active review-settings-toggle' : 'tab review-settings-toggle'}
+            title="复习设置：每天多少个新词、复习哪些词"
+            aria-label="复习设置"
+            aria-expanded={showReviewSettings}
+            onClick={() => setShowReviewSettings((open) => !open)}
+          >
+            ⚙
+          </button>
 
           <button
             type="button"
@@ -367,6 +387,50 @@ export default function Sidebar({
             导出 MD
           </button>
         </div>
+
+        {showReviewSettings && (
+          <div className="review-settings">
+            <label className="review-setting-row">
+              <span className="review-setting-label">每天新词</span>
+              <input
+                type="number"
+                className="review-daily-new"
+                aria-label="每天的复习新词上限"
+                min={MIN_DAILY_NEW}
+                max={MAX_DAILY_NEW}
+                value={reviewSettings.dailyNew}
+                onChange={(event) => onReviewSettingsChange({ dailyNew: Number(event.target.value) })}
+              />
+              <span className="review-setting-hint">个</span>
+            </label>
+
+            <div className="review-setting-row">
+              <span className="review-setting-label">范围</span>
+              <div className="filter-tabs">
+                {REVIEW_SCOPES.map((scope: ReviewScope) => (
+                  <button
+                    type="button"
+                    key={scope}
+                    className={reviewSettings.scope === scope ? 'tab active' : 'tab'}
+                    disabled={scope === 'doc' && !scopeHasDoc}
+                    title={
+                      scope === 'doc' && !scopeHasDoc
+                        ? '先打开一本书'
+                        : scope === 'manual'
+                          ? '只复习手动记的词'
+                          : scope === 'doc'
+                            ? '只复习当前这本书里的词'
+                            : '全部词都复习'
+                    }
+                    onClick={() => onReviewSettingsChange({ scope })}
+                  >
+                    {REVIEW_SCOPE_LABELS[scope]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="filter-tabs">
           {FILTERS.map((item) => (

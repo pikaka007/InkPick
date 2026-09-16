@@ -12,8 +12,8 @@ import {
   vocabToAnkiCsv
 } from '@core/export'
 import { DEFAULT_SIDEBAR_WIDTH, clampSidebarWidth } from '@core/prefs'
-import { buildReviewQueue, queueSize } from '@core/review'
-import { indexOfAnnotation } from '@core/store'
+import { buildReviewQueue, dueBefore, queueSize } from '@core/review'
+import { indexOfAnnotation, isManual } from '@core/store'
 import { splitParagraphs } from '@core/text'
 import { groupVocab } from '@core/vocab'
 import type { Annotation, Doc } from '@core/types'
@@ -52,7 +52,9 @@ export default function App(): JSX.Element {
   const saveProgress = useAppStore((state) => state.saveProgress)
   const updatePrefs = useAppStore((state) => state.updatePrefs)
   const gradeReview = useAppStore((state) => state.gradeReview)
+  const updateReviewSettings = useAppStore((state) => state.updateReviewSettings)
   const prefs = store.prefs
+  const reviewSettings = store.reviewSettings
 
   // 主题挂在 documentElement 上，整个应用（含侧栏）一起换
   useEffect(() => {
@@ -150,15 +152,38 @@ export default function App(): JSX.Element {
    * 词是从哪本书收来的跟「该不该复习」无关。
    */
   const allVocabGroups = useMemo(() => groupVocab(store.annotations), [store.annotations])
-  const groupsByKey = useMemo(
-    () => new Map(allVocabGroups.map((item) => [item.key, item])),
-    [allVocabGroups]
-  )
+
+  /**
+   * 按复习范围筛出参与复习的词。
+   * 一个分组可能既有手动记的、又有书里划到的，所以用 some 而不是看第一条。
+   * 「本书」在没有打开书时退回全部 —— 否则队列会莫名其妙地空。
+   */
+  const scopedGroups = useMemo(() => {
+    if (reviewSettings.scope === 'manual') {
+      return allVocabGroups.filter((item) => item.items.some(isManual))
+    }
+    if (reviewSettings.scope === 'doc' && currentDocId) {
+      return allVocabGroups.filter((item) => item.items.some((one) => one.docId === currentDocId))
+    }
+    return allVocabGroups
+  }, [allVocabGroups, reviewSettings.scope, currentDocId])
+
+  const groupsByKey = useMemo(() => new Map(allVocabGroups.map((item) => [item.key, item])), [allVocabGroups])
+  const reviewKeys = useMemo(() => scopedGroups.map((item) => item.key), [scopedGroups])
   const reviewQueue = useMemo(
-    () => buildReviewQueue(allVocabGroups.map((item) => item.key), store.review, { now: Date.now() }),
-    [allVocabGroups, store.review]
+    () =>
+      buildReviewQueue(reviewKeys, store.review, {
+        now: Date.now(),
+        dailyNewLimit: reviewSettings.dailyNew
+      }),
+    [reviewKeys, store.review, reviewSettings.dailyNew]
   )
   const reviewCount = queueSize(reviewQueue)
+  /** 接下来 24 小时内还会到期多少 —— 复习完那一屏告诉用户下次有多少 */
+  const dueTomorrow = useMemo(
+    () => dueBefore(reviewKeys, store.review, Date.now() + 24 * 60 * 60 * 1000),
+    [reviewKeys, store.review]
+  )
 
   const [reviewOpen, setReviewOpen] = useState(false)
   /**
@@ -256,8 +281,13 @@ export default function App(): JSX.Element {
     setJump({ start: resolved.start, end: resolved.end, nonce: Date.now(), kind: 'annotation' })
   }
 
-  const handleDocChange = (docId: string): void => {
-    setJump(null)
+  /** 按 id 跳转 —— 复习面板里「看原文」用 */
+  const handleJumpById = (id: string): void => {
+    const annotation = store.annotations.find((item) => item.id === id)
+    if (annotation) handleJump(annotation)
+  }
+
+  const handleDocChange = (docId: string): void => {    setJump(null)
     setActiveAnnotationId(null)
     setChapterIndex(-1)
     // 换了书，上一本书里的位置退回去也没意义了
@@ -437,6 +467,9 @@ export default function App(): JSX.Element {
               onJumpChapter={handleJumpChapter}
               onStartReview={startReview}
               reviewCount={reviewCount}
+              reviewSettings={reviewSettings}
+              onReviewSettingsChange={updateReviewSettings}
+              scopeHasDoc={currentDocId !== null}
               onRemove={handleRemoveAnnotation}
               onSetDefinition={setManualDefinition}
               onEditNote={updateNote}
@@ -511,8 +544,14 @@ export default function App(): JSX.Element {
         <ReviewPanel
           queue={activeQueue}
           groups={groupsByKey}
+          dueSoon={dueTomorrow}
           onGrade={gradeReview}
           onClose={() => setReviewOpen(false)}
+          onJumpToSource={(id) => {
+            // 去看原文就把面板收起来。没评完的词下次打开还在（队列是从到期状态重建的）
+            setReviewOpen(false)
+            handleJumpById(id)
+          }}
         />
       )}
 

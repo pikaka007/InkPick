@@ -6,6 +6,8 @@ import type { Anchor, Annotation, AnnotationType, Doc, LookupStatus, ReviewState
 import { clamp } from './text'
 import { DEFAULT_PREFS, normalizePrefs } from './prefs'
 import type { ReaderPrefs } from './prefs'
+import { DEFAULT_REVIEW_SETTINGS, normalizeReviewSettings } from './review'
+import type { ReviewSettings } from './review'
 
 export const STORE_VERSION = 1
 
@@ -16,7 +18,8 @@ export function createEmptyStore(): Store {
     annotations: [],
     progress: {},
     prefs: { ...DEFAULT_PREFS },
-    review: {}
+    review: {},
+    reviewSettings: { ...DEFAULT_REVIEW_SETTINGS }
   }
 }
 
@@ -197,6 +200,11 @@ export function setReview(store: Store, key: string, state: ReviewState): Store 
   return { ...store, review: { ...store.review, [key]: state } }
 }
 
+/** 改复习偏好（每天新词上限 / 范围），会夹到合法值 */
+export function setReviewSettings(store: Store, patch: Partial<ReviewSettings>): Store {
+  return { ...store, reviewSettings: normalizeReviewSettings({ ...store.reviewSettings, ...patch }) }
+}
+
 export function serializeStore(store: Store): string {
   return JSON.stringify(store)
 }
@@ -227,7 +235,9 @@ export function deserializeStore(raw: string | null | undefined): Store {
     // 旧版本文件没有 prefs，normalizePrefs 会补全并夹到合法档位
     prefs: normalizePrefs(candidate.prefs),
     // 旧版本没有复习进度；坏掉的单条丢掉，不影响别的
-    review: normalizeReviewMap(candidate.review)
+    review: normalizeReviewMap(candidate.review),
+    // 旧版本没有复习偏好；手改过存档也会带来非法值，统一收敛
+    reviewSettings: normalizeReviewSettings(candidate.reviewSettings)
   }
 }
 

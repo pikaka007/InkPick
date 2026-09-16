@@ -6,6 +6,7 @@
  * 所以只有一张 Annotation 表，不要拆成三张。
  */
 import type { ReaderPrefs } from './prefs'
+import type { ReviewSettings } from './review'
 
 /** 标注在原文中的位置。offset 之外冗余存 text/prefix/suffix，用于内容漂移后的重定位。 */
 export interface Anchor {
@@ -85,6 +86,8 @@ export interface Store {
    * 旧数据里没这个字段，反序列化时补空对象。
    */
   review: Record<string, ReviewState>
+  /** 复习的偏好：每天新词上限与复习范围。旧数据没有，反序列化时补默认值 */
+  reviewSettings: ReviewSettings
 }
 
 /**

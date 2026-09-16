@@ -12,8 +12,12 @@ interface ReviewPanelProps {
   queue: string[]
   /** key → 分组。查不到的会被跳过（词被删了） */
   groups: Map<string, VocabGroup>
+  /** 接下来 24 小时内还会到期多少 —— 过完了给一句交代 */
+  dueSoon: number
   /** 评一次分。返回新的复习状态，用来给一句「下次什么时候见」的反馈 */
   onGrade: (key: string, grade: ReviewGrade) => ReviewState
+  /** 去看这个词在原文里的位置（会收起面板） */
+  onJumpToSource: (annotationId: string) => void
   onClose: () => void
 }
 
@@ -30,7 +34,14 @@ const GRADES: { grade: ReviewGrade; label: string; hint: string; className: stri
  * 等于只是「标记一下」，没有回忆动作。**先自己回想、再翻看答案**才是间隔重复起作用的地方，
  * 所以释义默认遮住，得先点「显示释义」，评分按钮在那之前是禁用的。
  */
-export default function ReviewPanel({ queue, groups, onGrade, onClose }: ReviewPanelProps): JSX.Element {
+export default function ReviewPanel({
+  queue,
+  groups,
+  dueSoon,
+  onGrade,
+  onJumpToSource,
+  onClose
+}: ReviewPanelProps): JSX.Element {
   const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
   const [lastResult, setLastResult] = useState<{ label: string; interval: string } | null>(null)
@@ -94,7 +105,9 @@ export default function ReviewPanel({ queue, groups, onGrade, onClose }: ReviewP
             <p className="review-done-title">今天要复习的都过完了</p>
             <p className="review-done-hint">
               {queue.length > 0 ? `这一轮过了 ${queue.length} 个词。` : '这会儿没有到期的词。'}
-              隔一段时间再回来，到期会自动出现。
+              {dueSoon > 0
+                ? `接下来 24 小时还会有 ${dueSoon} 个到期。`
+                : '隔一段时间再回来，到期会自动出现。'}
             </p>
           </div>
         ) : (
@@ -106,7 +119,7 @@ export default function ReviewPanel({ queue, groups, onGrade, onClose }: ReviewP
               {revealed ? (
                 <>
                   <p className="review-definition">{groupDefinition(group) || '（还没有释义）'}</p>
-                  <Contexts group={group} />
+                  <Contexts group={group} onJumpToSource={onJumpToSource} />
                 </>
               ) : (
                 <button
@@ -150,15 +163,29 @@ export default function ReviewPanel({ queue, groups, onGrade, onClose }: ReviewP
 }
 
 /** 这个词是在哪些句子里遇到的 —— 这是别的背单词软件给不了的东西 */
-function Contexts({ group }: { group: VocabGroup }): JSX.Element | null {
+function Contexts({
+  group,
+  onJumpToSource
+}: {
+  group: VocabGroup
+  onJumpToSource: (annotationId: string) => void
+}): JSX.Element | null {
   const items = group.items.filter((item) => !isManual(item) && annotationText(item)).slice(0, 2)
-  if (items.length === 0) return <p className="review-context manual">手动记的词，没有原句</p>
+  if (items.length === 0) return <p className="review-context-manual">手动记的词，没有原句</p>
 
   return (
     <ul className="review-contexts">
       {items.map((item) => (
-        <li key={item.id} className="review-context">
-          {annotationText(item)}
+        <li key={item.id}>
+          {/* 点了去看原文会收起面板；没评完的词下次打开还在（队列按到期状态重建） */}
+          <button
+            type="button"
+            className="review-context"
+            title="去看这句话在原文里的位置"
+            onClick={() => onJumpToSource(item.id)}
+          >
+            {annotationText(item)}
+          </button>
         </li>
       ))}
     </ul>
