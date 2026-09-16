@@ -160,9 +160,15 @@ export const useAppStore = create<AppState>((set, get) => {
         createdAt: Date.now()
       }
 
-      commit((store) => setProgress(addDoc(store, doc), doc.id, createAnchor(doc.content, 0, 0)), {
-        currentDocId: doc.id
-      })
+      commit(
+        (store) => ({
+          ...setProgress(addDoc(store, doc), doc.id, createAnchor(doc.content, 0, 0)),
+          // 导入的这本书就是「上次看的书」—— 不设它的话，关掉重开
+          // 会打开上一本，用户会以为刚导入的书不见了
+          lastDocId: doc.id
+        }),
+        { currentDocId: doc.id }
+      )
       return { title: doc.title, encodingInfo: imported.encodingInfo }
     },
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { resolveAnchor } from '@core/anchor'
 import { detectChapters } from '@core/chapters'
+import { popNav, pushNav } from '@core/history'
+import type { NavEntry } from '@core/history'
 import {
   annotationsToMarkdown,
   libraryFileName,
@@ -143,23 +145,63 @@ export default function App(): JSX.Element {
   /** 当前读到第几章。由 Reader 上报（它才知道视口顶部在哪），侧栏目录靠它高亮 */
   const [chapterIndex, setChapterIndex] = useState(-1)
 
-  /** 点目录：复用现成的 jump 通道，只是换成「顶端对齐 + 立即」 */
+  /**
+   * 导航历史：从侧栏点词/点章跳走之前的位置。
+   *
+   * 光有「返回」按钮还不够 —— 跳转本身也不该改写阅读进度（在 Reader 里靠
+   * userDrivenRef 区分「用户在滚」和「被跳转带着滚」），否则忘了点返回就真丢了。
+   */
+  const [navHistory, setNavHistory] = useState<NavEntry[]>([])
+
+  /**
+   * 「当前视口看到哪儿」——和阅读进度分开。
+   * 跳转会实时更新它（否则连点两个词时，第二步记的还是上一次的进度），
+   * 但只有用户自己滚才把它写进阅读进度。
+   */
+  const viewOffsetRef = useRef(0)
+
+  const handlePosition = useCallback(
+    (offset: number, options: { userDriven: boolean }): void => {
+      viewOffsetRef.current = offset
+      if (options.userDriven && currentDocId) saveProgress(currentDocId, offset)
+    },
+    [currentDocId, saveProgress]
+  )
+
+  // 换书时先把视口位置放到那本书的阅读进度上，
+  // 免得用户还没滚动就点词，记下的是上一本书的偏移量
+  useEffect(() => {
+    const state = useAppStore.getState()
+    viewOffsetRef.current = (currentDocId && state.store.progress[currentDocId]?.start) || 0
+  }, [currentDocId])
+
+  /** 跳转前先记住当前位置 */
+  const rememberPosition = useCallback((): void => {
+    if (!currentDocId) return
+    setNavHistory((history) => pushNav(history, { docId: currentDocId, offset: viewOffsetRef.current }))
+  }, [currentDocId])
+
+  /** 点标注：如果它属于另一本书，先切过去 */
   const handleJumpChapter = useCallback(
     (index: number): void => {
       const chapter = chapters[index]
       if (!chapter) return
+      rememberPosition()
       setActiveAnnotationId(null)
-      setJump({ start: chapter.start, end: chapter.start, nonce: Date.now(), kind: 'chapter' })
+      setJump({ start: chapter.start, end: chapter.start, nonce: Date.now(), kind: 'position' })
     },
-    [chapters]
+    [chapters, rememberPosition]
   )
 
-  const handleProgress = useCallback(
-    (offset: number) => {
-      if (currentDocId) saveProgress(currentDocId, offset)
-    },
-    [currentDocId, saveProgress]
-  )
+  /** 退回上一个位置。返回本身不再压栈，否则会来回弹 */
+  const handleGoBack = useCallback((): void => {
+    const { top, rest } = popNav(navHistory)
+    if (!top) return
+    setNavHistory(rest)
+    if (top.docId !== currentDocId) selectDoc(top.docId)
+    setActiveAnnotationId(null)
+    setJump({ start: top.offset, end: top.offset, nonce: Date.now(), kind: 'position' })
+  }, [navHistory, currentDocId, selectDoc])
 
   // 消息由 Reader 统一发（它才知道动作的上下文），这里只把结果递回去
   const handleAddVocab = useCallback(
@@ -178,6 +220,7 @@ export default function App(): JSX.Element {
     const resolved = resolveAnchor(target.content, annotation.anchor)
     if (!resolved) return
 
+    rememberPosition()
     if (annotation.docId !== currentDocId) selectDoc(annotation.docId)
     setActiveAnnotationId(annotation.id)
     setJump({ start: resolved.start, end: resolved.end, nonce: Date.now(), kind: 'annotation' })
@@ -187,6 +230,8 @@ export default function App(): JSX.Element {
     setJump(null)
     setActiveAnnotationId(null)
     setChapterIndex(-1)
+    // 换了书，上一本书里的位置退回去也没意义了
+    setNavHistory([])
     selectDoc(docId)
   }
 
@@ -390,9 +435,11 @@ export default function App(): JSX.Element {
             annotations={docAnnotations}
             jump={jump}
             initialOffset={store.progress[doc.id]?.start ?? 0}
+            canGoBack={navHistory.length > 0}
+            onGoBack={handleGoBack}
             onAddVocab={handleAddVocab}
             onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
-            onProgress={handleProgress}
+            onPosition={handlePosition}
             onChapterChange={setChapterIndex}
             onNotify={notify}
             prefs={prefs}

@@ -26,7 +26,7 @@ export interface JumpTarget extends OffsetRange {
    * 标注跳转「居中 + 平滑」并闪高亮；章节跳转「顶端对齐 + 立即」且不高亮
    * （跨几百章做平滑滚动会很难受）。
    */
-  kind?: 'annotation' | 'chapter'
+  kind?: 'annotation' | 'position'
 }
 
 interface SelectionInfo extends OffsetRange {
@@ -42,11 +42,23 @@ interface ReaderProps {
   /** 识别出的章节。为空表示这本书没有章节标记，目录与上下章整体隐藏 */
   chapters: Chapter[]
   annotations: Annotation[]
+  /** 标注跳转、章节跳转都靠它 */
   jump: JumpTarget | null
   initialOffset: number
+  /**
+   * 视口顶部到了哪里。
+   *
+   * userDriven 区分「用户在滚」还是「被跳转带着滚」：
+   *   - 真的在滚 → 这是阅读进度，写进存档
+   *   - 被跳转带着滚 → 只更新「当前看到哪儿」，**不碰阅读进度**
+   * 两者不能合并：跳转后若把进度也改了，忘了点返回就真丢了位置。
+   */
+  onPosition: (offset: number, options: { userDriven: boolean }) => void
+  /** 能不能退回上一个位置（从侧栏点词跳走之后，得有路回来） */
+  canGoBack: boolean
+  onGoBack: () => void
   onAddVocab: (range: OffsetRange, term: string) => 'added' | 'duplicate' | 'empty'
   onAddNote: (range: OffsetRange, content: string) => void
-  onProgress: (offset: number) => void
   /** 当前读到第几章（-1 表示在第一章之前）。侧栏目录靠它高亮 */
   onChapterChange: (index: number) => void
   /** 提示消息交给 App 统一展示 */
@@ -68,9 +80,11 @@ export default function Reader({
   annotations,
   jump,
   initialOffset,
+  canGoBack,
+  onGoBack,
   onAddVocab,
   onAddNote,
-  onProgress,
+  onPosition,
   onChapterChange,
   onNotify,
   prefs,
@@ -81,7 +95,7 @@ export default function Reader({
   const scrollRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const restoredDocRef = useRef<string | null>(null)
-  const lastReportedRef = useRef<number>(-1)
+  const lastPositionRef = useRef<number>(-1)
 
   const [selection, setSelection] = useState<SelectionInfo | null>(null)
   const [noteTarget, setNoteTarget] = useState<OffsetRange | null>(null)
@@ -162,13 +176,31 @@ export default function Reader({
     [chapters, onChapterChange]
   )
 
+  // 用户自己滚了 —— 从此开始滚动就算「在读」，进度该跟着走。
+  // 挂在 window 上：PageDown 这类按键不一定落在滚动容器上。
+  useEffect(() => {
+    const markUserDriven = (): void => {
+      userDrivenRef.current = true
+    }
+    window.addEventListener('wheel', markUserDriven, { passive: true })
+    window.addEventListener('keydown', markUserDriven)
+    window.addEventListener('touchstart', markUserDriven, { passive: true })
+    return () => {
+      window.removeEventListener('wheel', markUserDriven)
+      window.removeEventListener('keydown', markUserDriven)
+      window.removeEventListener('touchstart', markUserDriven)
+    }
+  }, [])
+
   // 打开文档时回到上次读到的位置（只在切换文档时执行一次）
   useEffect(() => {
     if (restoredDocRef.current === doc.id) return
     const root = rootRef.current
     if (!root) return
     restoredDocRef.current = doc.id
-    lastReportedRef.current = initialOffset
+    lastPositionRef.current = initialOffset
+    // 恢复位置本身不是「在读」，不写进度（值也一样）
+    userDrivenRef.current = false
     elementAtOffset(root, starts, initialOffset)?.scrollIntoView({ block: 'start' })
     // 正文短到不用滚时不会产生 scroll 事件，所以这里主动定位一次章节
     syncChapter(topSegmentOf())
@@ -232,15 +264,16 @@ export default function Reader({
     const root = rootRef.current
     if (!root) return
 
-    const isChapter = jump.kind === 'chapter'
+    const programmatic = jump.kind !== 'annotation'
+    userDrivenRef.current = false
     elementAtOffset(root, starts, jump.start)?.scrollIntoView({
-      // 章节跳转可能跨几百章，做平滑滚动会很难受；标注跳转距离近，居中更好看
-      block: isChapter ? 'start' : 'center',
-      behavior: isChapter ? 'auto' : 'smooth'
+      // 跨几百章的跳转做平滑滚动很难受；标注跳转距离近，居中更好看
+      block: programmatic ? 'start' : 'center',
+      behavior: programmatic ? 'auto' : 'smooth'
     })
 
-    // 章节跳转是一段零长度区间，没什么可闪的
-    const range = !isChapter && jump.end > jump.start ? rangeForOffsets(root, starts, jump) : null
+    // 位置跳转是一段零长度区间，没什么可闪的
+    const range = !programmatic && jump.end > jump.start ? rangeForOffsets(root, starts, jump) : null
     if (range) {
       applyHighlight('inkpick-active', [range])
       const timer = setTimeout(() => clearHighlight('inkpick-active'), 1600)
@@ -307,6 +340,7 @@ export default function Reader({
   }
 
   const returnToOrigin = (): void => {
+    userDrivenRef.current = false
     scrollToOffset(searchOriginRef.current)
     closeSearch()
   }
@@ -338,11 +372,24 @@ export default function Reader({
     syncChapter(segmentIndex)
 
     const offset = starts[segmentIndex] ?? 0
-    if (offset !== lastReportedRef.current) {
-      lastReportedRef.current = offset
-      onProgress(offset)
+    if (offset !== lastPositionRef.current) {
+      lastPositionRef.current = offset
+      // 「当前看到哪儿」总是要报；「阅读进度」只有用户自己滚了才写
+      onPosition(offset, { userDriven: userDrivenRef.current })
     }
-  }, [topSegmentOf, syncChapter, starts, onProgress])
+  }, [topSegmentOf, syncChapter, starts, onPosition])
+
+  /**
+   * 这次滚动是用户自己在驱还是被跳转带着走。
+   *
+   * 为什么需要它：跳转会触发滚动，而滚动会把偏移量当成「阅读进度」写进存档 ——
+   * 于是点一个第 2 章的词，阅读进度就从 60% 变成 10%，关掉重开也是从那里开始。
+   * 阅读位置是**真的丢了**，不只是「不顺手」。
+   *
+   * 所以：只有用户自己滚（滚轮 / 键盘 / 摸屏 / 拖进度条）才更新进度，
+   * 程序性跳动不写。跳到某处之后继续往下读，下次滚动就又归用户驱动了。
+   */
+  const userDrivenRef = useRef(true)
 
   // [ 上一章 / ] 下一章。在输入框里不抢这个键
   useEffect(() => {
@@ -437,6 +484,19 @@ export default function Reader({
             {highlightSupported() ? '' : ' · 当前环境不支持高亮'}
           </span>
         </div>
+
+        {/* 导航组：先「回到刚才的位置」，再「上一章 / 下一章」 */}
+        {canGoBack && (
+          <button
+            type="button"
+            className="back-button"
+            title="回到点这个词之前读到的位置"
+            aria-label="返回上一个位置"
+            onClick={onGoBack}
+          >
+            ← 返回
+          </button>
+        )}
 
         {chapters.length > 0 && (
           <div className="chapter-nav">
@@ -572,6 +632,8 @@ export default function Reader({
         onSeek={(next) => {
           const container = scrollRef.current
           if (!container) return
+          // 拖进度条是用户自己的意愿，算「在读」
+          userDrivenRef.current = true
           container.scrollTop = scrollTopForRatio(next, container.scrollHeight, container.clientHeight)
         }}
       />

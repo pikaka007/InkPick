@@ -1866,3 +1866,193 @@ describe('编码 · 备份 · 去重', () => {
     await expect.poll(async () => page.locator('.annotation').count()).toBe(before + 2)
   })
 })
+
+/**
+ * 跳转后能回到原处。
+ *
+ * 用户报的问题：点侧栏的词/笔记跳到原文之后，回不到刚才读的地方。
+ * 这里要守两件事，缺一件都等于位置真的丢了：
+ *   1. 有个「返回」入口，能退回去（而且能连退几步）
+ *   2. 跳转本身**不改写阅读进度** —— 否则忘了点返回、或者直接关掉应用，就真丢了
+ *
+ * 断言的写法：位置一律用「精确相等」而不是大小比较。
+ * 大小比较看着更宽松，其实很脆 —— 跳转是「居中显示」，视口顶部会比目标段靠前，
+ * 目标在文档末尾时更是会被夹到底部，于是「跳过去之后段号变大」根本不成立。
+ */
+describe('跳转后能回到原处', () => {
+  const BOOK = 'jump-target'
+
+  const topSegment = (): Promise<number> =>
+    page.evaluate(() => {
+      const container = document.querySelector('.reader-scroll')
+      if (!container) return -1
+      const top = container.scrollTop + 8
+      for (const element of document.querySelectorAll<HTMLElement>('[data-seg]')) {
+        if (element.offsetTop + element.offsetHeight > top) {
+          return Number(element.getAttribute('data-seg'))
+        }
+      }
+      return -1
+    })
+
+  /** 某个段落此刻在不在视口里 —— 「跳过去了」的正面证据 */
+  const segmentVisible = (index: number): Promise<boolean> =>
+    page.evaluate((target) => {
+      const element = document.querySelector(`[data-seg="${target}"]`)
+      const container = document.querySelector('.reader-scroll')
+      if (!element || !container) return false
+      const rect = element.getBoundingClientRect()
+      const view = container.getBoundingClientRect()
+      return rect.bottom > view.top && rect.top < view.bottom
+    }, index)
+
+  const waitScrollSettled = async (): Promise<void> => {
+    let last = -1
+    for (let i = 0; i < 40; i++) {
+      const now = await page.evaluate(
+        () => Math.round(document.querySelector('.reader-scroll')?.scrollTop ?? -1)
+      )
+      if (now === last) return
+      last = now
+      await page.waitForTimeout(50)
+    }
+  }
+
+  /** 用滚轮滚 —— 程序设 scrollTop 不算「用户自己滚」，不会写阅读进度 */
+  const wheelTo = async (deltaY: number): Promise<void> => {
+    await page.locator('.reader-scroll').hover()
+    await page.mouse.wheel(0, deltaY)
+    await waitScrollSettled()
+  }
+
+  const backButton = () => page.getByRole('button', { name: '返回上一个位置' })
+
+  /**
+   * 把视口带到文档中段。
+   *
+   * 先滚到底再往回滚一段，而不是直接「往下滚一点」——
+   * 上一个用例可能已经停在底部，再往下滚等于没动，起点就不确定了。
+   */
+  const scrollToMiddle = async (): Promise<void> => {
+    await wheelTo(4000)
+    await wheelTo(-900)
+  }
+
+  const clickAnnotation = async (lemma: string): Promise<void> => {
+    const group = await vocabGroup(lemma)
+    await group.locator('button.occurrence').first().click()
+  }
+
+  it('准备：导入一本够长的书，在两个不同位置各收一个词', async () => {
+    const parts: string[] = []
+    for (let i = 1; i <= 40; i++) {
+      parts.push(`第${i}段 这是用来验证跳转的正文，写长一点才有滚动可言，也好判断位置。`)
+    }
+    parts[4] = '第五段 这里放一个 ancient 词，位置靠前。'
+    parts[39] = '第四十段 这里放一个 sentinel 词，位置靠后。'
+
+    const file = join(exportDir, `${BOOK}.txt`)
+    await writeFile(file, `${parts.join('\n')}\n`, 'utf-8')
+    await app.evaluate(({ dialog }, target) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+    }, file)
+    await page.getByRole('button', { name: '打开 TXT' }).click()
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe(BOOK)
+
+    await page.evaluate(() => document.querySelector('[data-seg="4"]')?.scrollIntoView({ block: 'center' }))
+    await collectWord(4, 'ancient')
+    await page.evaluate(() => document.querySelector('[data-seg="39"]')?.scrollIntoView({ block: 'center' }))
+    await collectWord(39, 'sentinel')
+
+    // 词条列表要看得到（手动词之外还有别的书里的词）
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    await expect.poll(async () => page.locator('.vocab-group').count()).toBeGreaterThan(1)
+  })
+
+  it('点词跳走之后能原路返回（跳之前没有返回按钮）', async () => {
+    // 一开始没跳过，不该有返回按钮
+    expect(await backButton().count()).toBe(0)
+
+    // 滚到文档中段（目标词在末尾，此刻应该看不见）
+    await scrollToMiddle()
+    const origin = await topSegment()
+    expect(origin).toBeGreaterThan(0)
+    expect(await segmentVisible(39)).toBe(false)
+
+    // 点末尾那个词，跳过去
+    await clickAnnotation('sentinel')
+    await expect.poll(async () => segmentVisible(39)).toBe(true)
+    // 平滑滚动还在跑的时候读到的位置是中间值，等它停
+    await waitScrollSettled()
+    const jumped = await topSegment()
+    expect(jumped).not.toBe(origin)
+
+    // 出现返回按钮，点一下回到刚才读的地方
+    await expect.poll(async () => backButton().count()).toBe(1)
+    await backButton().click()
+    await expect.poll(topSegment).toBe(origin)
+
+    // 栈空了，按钮消失
+    await expect.poll(async () => backButton().count()).toBe(0)
+  })
+
+  it('连着跳两次能连退两步（不是只记一个位置）', async () => {
+    await scrollToMiddle()
+    const start = await topSegment()
+    expect(start).toBeGreaterThan(0)
+    expect(await segmentVisible(39)).toBe(false)
+
+    await clickAnnotation('sentinel')
+    await expect.poll(async () => segmentVisible(39)).toBe(true)
+    await waitScrollSettled()
+    const afterFirst = await topSegment()
+
+    await clickAnnotation('ancient')
+    await expect.poll(async () => segmentVisible(4)).toBe(true)
+    await waitScrollSettled()
+    const afterSecond = await topSegment()
+    expect(afterSecond).not.toBe(afterFirst)
+
+    // 第一步退回上一个跳转点（不是一路退回最开始）
+    await backButton().click()
+    await expect.poll(topSegment).toBe(afterFirst)
+    // 第二步才回到最开始读的地方
+    await backButton().click()
+    await expect.poll(topSegment).toBe(start)
+    await expect.poll(async () => backButton().count()).toBe(0)
+  })
+
+  it('★ 跳转不会把阅读进度改成跳过去的位置（关掉重开也还在原处）', async () => {
+    await scrollToMiddle()
+    const origin = await topSegment()
+    expect(origin).toBeGreaterThan(0)
+    expect(await segmentVisible(39)).toBe(false)
+
+    await clickAnnotation('sentinel')
+    await expect.poll(async () => segmentVisible(39)).toBe(true)
+    await waitScrollSettled()
+
+    // 「返回」按钮只是个入口；真正保证不丢的是进度没被改写。
+    // 所以这里**故意不点返回**，直接关掉应用看存档。
+    await app.close()
+
+    const persisted = JSON.parse(await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')) as {
+      docs: { id: string; title: string }[]
+      annotations: { term?: string; anchor?: { start: number } }[]
+      progress: Record<string, { start: number }>
+    }
+    const doc = persisted.docs.find((item) => item.title === BOOK)!
+    const sentinel = persisted.annotations.find((item) => item.term === 'sentinel')!
+    const saved = persisted.progress[doc.id].start
+
+    // 进度停在用户滚到的位置，而不是跳过去的那个词的位置
+    expect(saved).toBeGreaterThan(0)
+    expect(saved).toBeLessThan(sentinel.anchor!.start)
+
+    // 重开之后回到那个位置（而不是词的旁边）
+    await launch()
+    await page.waitForSelector('.reader')
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe(BOOK)
+    expect(await topSegment()).toBe(origin)
+  })
+})

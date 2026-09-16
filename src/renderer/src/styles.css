@@ -968,6 +968,21 @@ ul {
  * 章节导航。紧跟在书名后面 —— 它是「我在哪儿」的一部分，
  * 跟右侧那堆「怎么显示」的控件不是一类东西。
  */
+/* 「返回」和章节导航是一组：都是「换个地方看」，不是「怎么显示」 */
+.back-button {
+  flex: none;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius, 8px);
+}
+
+.back-button:hover {
+  background: var(--accent-soft);
+}
+
 .chapter-nav {
   display: flex;
   align-items: center;
