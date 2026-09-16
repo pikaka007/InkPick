@@ -44,7 +44,7 @@ interface ReaderProps {
   annotations: Annotation[]
   jump: JumpTarget | null
   initialOffset: number
-  onAddVocab: (range: OffsetRange, term: string) => void
+  onAddVocab: (range: OffsetRange, term: string) => 'added' | 'duplicate' | 'empty'
   onAddNote: (range: OffsetRange, content: string) => void
   onProgress: (offset: number) => void
   /** 当前读到第几章（-1 表示在第一章之前）。侧栏目录靠它高亮 */
@@ -394,10 +394,15 @@ export default function Reader({
     if (!selection) return
     const term = selection.text.trim()
     if (!term) return
-    onAddVocab({ start: selection.start, end: selection.end }, term)
+
+    // 提示只在这里发一处。
+    // 以前不管结果如何都报「已加入单词本」，结果就是：
+    // 重复收藏被拦下了，用户看到的仍然是「已加入单词本」—— 提示和行为不一致
+    const result = onAddVocab({ start: selection.start, end: selection.end }, term)
     setSelection(null)
     clearDomSelection()
-    onNotify('已加入单词本')
+    if (result === 'added') onNotify('已加入单词本')
+    else if (result === 'duplicate') onNotify('这个词在这个位置已经收过了')
   }
 
   const handleAddNote = (): void => {

@@ -1,10 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ConfirmOptions, DictionaryStatus, ImportedDocument, InkPickApi } from '../core/api'
+import type { ConfirmOptions, DictionaryStatus, ImportedDocument, InkPickApi, StoreReadResult } from '../core/api'
 import type { LookupResult } from '../core/dictionary'
 
 /** 暴露给渲染进程的全部能力 */
 const api: InkPickApi = {
-  readStore: () => ipcRenderer.invoke('store:read') as Promise<string | null>,
+  readStore: () => ipcRenderer.invoke('store:read') as Promise<StoreReadResult>,
   writeStore: (json: string) => ipcRenderer.invoke('store:write', json) as Promise<void>,
   importDocument: () => ipcRenderer.invoke('doc:import') as Promise<ImportedDocument | null>,
   lookupWord: (word: string) => ipcRenderer.invoke('dict:lookup', word) as Promise<LookupResult>,

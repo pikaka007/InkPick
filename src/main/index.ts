@@ -1,10 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
+import { decodeText, describeEncoding } from '../core/decode'
 import { normalizeContent } from '../core/text'
-import type { ConfirmOptions, ImportedDocument } from '../core/api'
+import type { ConfirmOptions, ImportedDocument, StoreReadResult } from '../core/api'
 import { dictionaryStatus, lookupWord } from './dictionary'
-import { readStoreFile, storeFilePath, writeStoreFile } from './storeFile'
+import { isParsableJson, readBackupFile, readStoreFile, storeFilePath, writeStoreFile } from './storeFile'
 
 const isDev = !app.isPackaged
 
@@ -62,7 +63,20 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('store:read', async () => readStoreFile())
+  /**
+   * 读存档。主文件解析不了就用备份顶上，并把「用了备份」告诉渲染进程 ——
+   * 静默恢复很危险：用户会以为自己丢了最后一次编辑却不知道为什么。
+   */
+  ipcMain.handle('store:read', async (): Promise<StoreReadResult> => {
+    const raw = await readStoreFile()
+    if (raw === null || isParsableJson(raw)) return { raw, recovered: false }
+
+    const backup = await readBackupFile()
+    if (isParsableJson(backup)) return { raw: backup, recovered: true }
+
+    // 两个都坏了：把原样的内容交回去，让上层的容错退回空库（不崩）
+    return { raw, recovered: false }
+  })
 
   ipcMain.handle('store:write', async (_event, json: string) => {
     await writeStoreFile(json)
@@ -80,12 +94,16 @@ function registerIpc(): void {
     if (result.canceled || result.filePaths.length === 0) return null
 
     const filePath = result.filePaths[0]
-    const raw = await readFile(filePath, 'utf-8')
+    // 读字节而不是直接 readFile(utf-8)：国内大量 TXT 是 GBK，硬按 UTF-8 读会全是乱码
+    const bytes = await readFile(filePath)
+    const decoded = decodeText(new Uint8Array(bytes))
     const extension = extname(filePath)
     return {
       title: basename(filePath, extension),
       // 必须在这里 normalize：全文偏移量基于归一化后的字符串
-      content: normalizeContent(raw)
+      content: normalizeContent(decoded.text),
+      encoding: decoded.encoding,
+      encodingInfo: describeEncoding(decoded)
     }
   })
 

@@ -11,6 +11,7 @@ import {
   createId,
   deserializeStore,
   findExistingVocab,
+  findVocabAtSameSpot,
   getDoc,
   insertAnnotationAt,
   removeAnnotation,
@@ -53,11 +54,15 @@ interface AppState {
   ready: boolean
   store: Store
   currentDocId: string | null
+  /** 上次启动时主存档坏了、用的是备份。只用来提一次提示 */
+  recoveredFromBackup: boolean
   init: () => Promise<void>
-  openDocument: () => Promise<void>
+  /** 导入文档。返回导入结果（含编码说明）供界面提示，取消或失败返回 null */
+  openDocument: () => Promise<{ title: string; encodingInfo: string } | null>
   loadSample: () => void
   selectDoc: (docId: string) => void
-  addVocab: (range: OffsetRange, term: string) => void
+  /** 收藏划词。返回重复时界面提示一下，其余静默 */
+  addVocab: (range: OffsetRange, term: string) => 'added' | 'duplicate' | 'empty'
   addNote: (range: OffsetRange, content: string) => void
   /**
    * 手动记一个词 —— 不来自任何书，所以没有 docId 也没有 anchor。
@@ -96,14 +101,20 @@ export const useAppStore = create<AppState>((set, get) => {
     type: 'vocab' | 'note',
     range: OffsetRange,
     payload: { term?: string; content?: string }
-  ): Annotation | null => {
+  ): { annotation: Annotation | null; duplicate: boolean } => {
     const { store, currentDocId } = get()
-    if (!currentDocId) return null
+    if (!currentDocId) return { annotation: null, duplicate: false }
     const doc = getDoc(store, currentDocId)
-    if (!doc) return null
+    if (!doc) return { annotation: null, duplicate: false }
 
     const anchor = createAnchor(doc.content, range.start, range.end)
-    if (!anchor.text.trim()) return null
+    if (!anchor.text.trim()) return { annotation: null, duplicate: false }
+
+    // 同一个位置已经收过这个词了 —— 手滑连点两次不给它生成第二条。
+    // 只拦词条：同一句话写两条不同的笔记是合理需求。
+    if (type === 'vocab' && findVocabAtSameSpot(store, currentDocId, anchor)) {
+      return { annotation: null, duplicate: true }
+    }
 
     const annotation = createAnnotation({
       docId: currentDocId,
@@ -115,23 +126,24 @@ export const useAppStore = create<AppState>((set, get) => {
       ...(type === 'vocab' ? { lookupStatus: 'pending' as const } : {})
     })
     commit((current) => addAnnotation(current, annotation))
-    return annotation
+    return { annotation, duplicate: false }
   }
 
   return {
     ready: false,
     store: createEmptyStore(),
     currentDocId: null,
+    recoveredFromBackup: false,
 
     init: async () => {
-      const raw = await window.api.readStore()
+      const { raw, recovered } = await window.api.readStore()
       const store = deserializeStore(raw)
       const lastDocId =
         store.lastDocId && store.docs.some((d) => d.id === store.lastDocId)
           ? store.lastDocId
           : (store.docs[0]?.id ?? null)
 
-      set({ store, currentDocId: lastDocId, ready: true })
+      set({ store, currentDocId: lastDocId, ready: true, recoveredFromBackup: recovered })
 
       // 之前收的词可能还没查过（或上次查词失败），补一次
       await backfillPending()
@@ -139,7 +151,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
     openDocument: async () => {
       const imported = await window.api.importDocument()
-      if (!imported) return
+      if (!imported) return null
 
       const doc: Doc = {
         id: createId(),
@@ -151,6 +163,7 @@ export const useAppStore = create<AppState>((set, get) => {
       commit((store) => setProgress(addDoc(store, doc), doc.id, createAnchor(doc.content, 0, 0)), {
         currentDocId: doc.id
       })
+      return { title: doc.title, encodingInfo: imported.encodingInfo }
     },
 
     loadSample: () => {
@@ -176,8 +189,11 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     addVocab: (range, term) => {
-      const annotation = createAnnotationFor('vocab', range, { term })
-      if (annotation) void get().lookupAndPatch(term, [annotation.id])
+      const { annotation, duplicate } = createAnnotationFor('vocab', range, { term })
+      if (duplicate) return 'duplicate'
+      if (!annotation) return 'empty'
+      void get().lookupAndPatch(term, [annotation.id])
+      return 'added'
     },
 
     addNote: (range, content) => {

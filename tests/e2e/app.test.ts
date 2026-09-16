@@ -1643,3 +1643,226 @@ describe('修过的两个 bug', () => {
     await expect.poll(async () => (await group.locator('.vocab-definition').textContent()) ?? '').toContain('习惯')
   })
 })
+
+/**
+ * 编码识别 / 存档备份恢复 / 划词去重。
+ *
+ * 这三条都是「让应用不出事」的修补，各自都能独立验证，
+ * 所以放一起但互不依赖。放在最后：会导入新文档。
+ */
+describe('编码 · 备份 · 去重', () => {
+  /** 用字节写文件，绕过 TextEncoder（它只会 UTF-8） */
+  async function writeBytes(name: string, bytes: number[]): Promise<string> {
+    const file = join(exportDir, name)
+    await writeFile(file, Buffer.from(bytes))
+    return file
+  }
+
+  async function importFile(file: string, expectTitle: string): Promise<void> {
+    await app.evaluate(({ dialog }, target) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+    }, file)
+    await page.getByRole('button', { name: '打开 TXT' }).click()
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe(expectTitle)
+  }
+
+  const firstParagraph = (): Promise<string> =>
+    page.evaluate(() => document.querySelector('[data-seg="0"]')?.textContent ?? '')
+
+  const secondParagraph = (): Promise<string> =>
+    page.evaluate(() => document.querySelector('[data-seg="1"]')?.textContent ?? '')
+
+  /** 输入条可能被上一个用例留着开着，先确认状态再点 */
+  const openAddWordInput = async (): Promise<void> => {
+    if ((await page.locator('.add-word-input').count()) === 0) {
+      await page.getByRole('button', { name: '手动添加单词' }).click()
+      await page.waitForSelector('.add-word-input')
+    }
+  }
+
+  const addManualWord = async (term: string): Promise<void> => {
+    await openAddWordInput()
+    await page.locator('.add-word-input').fill(term)
+    await page.locator('.add-word-input').press('Enter')
+  }
+
+  /** 等提示自己消失 —— 不然后面断言「没有提示」会被上一个用例残留的 toast 骗到 */
+  const waitToastGone = async (): Promise<void> => {
+    await expect.poll(async () => page.locator('.toast').count(), { timeout: 8000 }).toBe(0)
+  }
+
+  it('GBK 中文小说不再是一片乱码', async () => {
+    // 「第一章\n正文第一段。\n」的 GBK 字节。
+    // 注意标题必须**独占一行** —— 和正文写在同一行会被「拒绝句读」规则正确地拦掉
+    const file = await writeBytes('gbk-novel.txt', [
+      0xb5, 0xda, 0xd2, 0xbb, 0xd5, 0xc2, // 第一章
+      0x0a,
+      0xd5, 0xfd, 0xce, 0xc4, 0xb5, 0xda, 0xd2, 0xbb, 0xb6, 0xce, // 正文第一段
+      0xa1, 0xa3, // 。
+      0x0a
+    ])
+
+    await importFile(file, 'gbk-novel')
+
+    // 正文读对了，而不是「���ġ�」
+    expect(await firstParagraph()).toBe('第一章')
+    expect(await secondParagraph()).toBe('正文第一段。')
+
+    // 换了编码要告诉用户，而且说明是推测的
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('GBK')
+    expect(await page.locator('.toast').textContent()).toContain('推测')
+  })
+
+  it('★ 章节功能在 GBK 文件上也能用（编码不对时它会静默失效）', async () => {
+    // 这本书只有一章，所以只验证「认出来了」这一件事
+    await expect.poll(async () => page.locator('.chapter-nav').count()).toBe(1)
+    expect(await page.locator('.chapter-name').textContent()).toBe('第一章')
+  })
+
+  it('UTF-8 文件不提示编码（默认情况不该每次都多一句话）', async () => {
+    await waitToastGone()
+
+    const file = join(exportDir, 'utf8-novel.txt')
+    await writeFile(file, '第一章\n正文第一段。\n', 'utf-8')
+    await importFile(file, 'utf8-novel')
+
+    expect(await secondParagraph()).toBe('正文第一段。')
+    // 没换编码就不该有提示
+    await page.waitForTimeout(400)
+    expect(await page.locator('.toast').count()).toBe(0)
+  })
+
+  it('★ 主存档被写坏时，用备份恢复，并且明确告诉用户', async () => {
+    // 先攒一点数据，确保 .bak 有内容
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    await addManualWord('resilient')
+    await expect.poll(async () => page.locator('.vocab-head strong').allTextContents()).toContain('resilient')
+
+    // 关窗会触发一次落盘：这时 .bak 里就是「有 resilient」的那一版
+    await app.close()
+    const before = await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')
+    expect(before).toContain('resilient')
+
+    // 把主存档写坏，模拟被外部程序改烂 / 写一半断电
+    await writeFile(join(userDataDir, 'inkpick-store.json'), '{"docs": [ 这不是 JSON', 'utf-8')
+
+    await launch()
+    await page.waitForSelector('.app')
+
+    // 数据从备份回来了，而不是退回空库
+    await expect.poll(async () => page.locator('.doc-item').count()).toBeGreaterThan(0)
+    // 而且明确告诉用户发生了什么
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('备份')
+  })
+
+  it('主存档坏了不会把好备份也毁掉（备份前先确认内容是合法的）', async () => {
+    // 造一个「好备份 + 坏主文件」的局面：这正是备份存在的意义
+    const good = JSON.stringify({
+      version: 1,
+      docs: [{ id: 'keep-me', title: '保命书', content: '正文', createdAt: 1 }],
+      annotations: [],
+      progress: {},
+      lastDocId: 'keep-me',
+      prefs: {}
+    })
+    await app.close()
+    await writeFile(join(userDataDir, 'inkpick-store.json.bak'), good, 'utf-8')
+    await writeFile(join(userDataDir, 'inkpick-store.json'), '{"docs": [ 被截断了', 'utf-8')
+
+    await launch()
+    await page.waitForSelector('.app')
+    // 从备份恢复，书在
+    await expect.poll(async () => page.locator('.doc-item').count()).toBe(1)
+
+    // 现在动一下让它落盘。如果实现是「无条件拷主文件」，
+    // 那一刻会把坏内容拷成 .bak，好备份就永久没了
+    await page.getByRole('button', { name: '手动添加单词' }).click()
+    await page.locator('.add-word-input').fill('after-corruption')
+    await page.locator('.add-word-input').press('Enter')
+    await page.waitForTimeout(500)
+    await app.close()
+
+    const backup = await readFile(join(userDataDir, 'inkpick-store.json.bak'), 'utf-8')
+    // 备份里仍然是那份好数据，而不是被截断的垃圾
+    expect(backup).toContain('保命书')
+    expect(backup).not.toContain('被截断')
+
+    await launch()
+    await page.waitForSelector('.app')
+  })
+
+  it('主存档和备份都坏了也不会崩，只是退回空库', async () => {
+    await app.close()
+    await writeFile(join(userDataDir, 'inkpick-store.json'), 'garbage', 'utf-8')
+    await writeFile(join(userDataDir, 'inkpick-store.json.bak'), 'also garbage', 'utf-8')
+
+    await launch()
+    await page.waitForSelector('.app')
+    // 起来是能起来的，显示欢迎页
+    await expect.poll(async () => page.locator('.welcome h1').count()).toBe(1)
+  })
+
+  it('写入前会把上一版留成 .bak（否则坏了就没有退路）', async () => {
+    // 上一步两个文件都写坏了，库是空的。重新攒一点数据。
+    await page.getByRole('button', { name: '先看看示例' }).click()
+    await page.waitForSelector('.reader')
+    // 等第一次落盘发生（防抖 300ms）。这一次不产生备份：
+    // 启动时读到的是坏文件，内容不明，不拷贝。
+    await page.waitForTimeout(500)
+
+    // 手动词不属于任何书，得把范围切到「全部」才看得到
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    await addManualWord('backupcheck')
+    await expect.poll(async () => page.locator('.vocab-head strong').allTextContents()).toContain('backupcheck')
+    // 等第二次落盘：这次会把上一份（已知合法）拷成 .bak
+    await page.waitForTimeout(500)
+
+    await app.close()
+
+    const backup = await readFile(join(userDataDir, 'inkpick-store.json.bak'), 'utf-8').catch(() => '')
+    expect(backup).toContain('"version"')
+    // 备份的是**上一版**，所以还没有刚加的那个词（否则它就不是「恢复点」而是副本）
+    expect(backup).not.toContain('backupcheck')
+
+    await launch()
+    await page.waitForSelector('.app')
+  })
+
+  it('★ 同一位置重复收藏不会生成两条', async () => {
+    // 这本书有示例正文，划一个词收藏两次
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    const before = await page.locator('.vocab-group').count()
+
+    await collectWord(0, 'Reading')
+    await expect.poll(async () => page.locator('.vocab-group').count()).toBe(before + 1)
+
+    // 再来一次：同一个词、同一个位置
+    await collectWord(0, 'Reading')
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('已经收过')
+    // 词条数没变，也没有变成 ×2
+    expect(await page.locator('.vocab-group').count()).toBe(before + 1)
+
+    const group = await vocabGroup('reading')
+    expect(await group.locator('.occurrence').count()).toBe(1)
+    expect(await group.locator('.times').count()).toBe(0)
+  })
+
+  it('同一句话可以写两条不同的笔记（去重只针对词条）', async () => {
+    const before = await page.locator('.annotation').count()
+
+    await selectInParagraph(1, 'Speed')
+    await page.getByRole('button', { name: '＋ 笔记' }).click()
+    await page.locator('.modal textarea').fill('第一条')
+    // 必须限定在弹层里：侧栏的「手动记词」行也有一个「保存」按钮
+    await page.locator('.modal').getByRole('button', { name: /保存/ }).click()
+    await page.waitForSelector('.modal', { state: 'detached' })
+
+    await selectInParagraph(1, 'Speed')
+    await page.getByRole('button', { name: '＋ 笔记' }).click()
+    await page.locator('.modal textarea').fill('第二条')
+    await page.locator('.modal').getByRole('button', { name: /保存/ }).click()
+    await page.waitForSelector('.modal', { state: 'detached' })
+
+    await expect.poll(async () => page.locator('.annotation').count()).toBe(before + 2)
+  })
+})

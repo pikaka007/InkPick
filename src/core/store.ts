@@ -111,6 +111,7 @@ export function findExistingVocab(store: Store, term: string): Annotation | unde
 }
 
 /** 分组的依据：lemma 优先，其次用户输入的原词，最后回退到原文 */
+/** 分组的依据：lemma 优先，其次用户输入的原词，最后回退到原文 */
 export function vocabKeyOf(annotation: Annotation): string {
   return (annotation.lemma || annotation.term || annotation.anchor?.text || '').trim().toLowerCase()
 }
@@ -118,6 +119,22 @@ export function vocabKeyOf(annotation: Annotation): string {
 /** 列表里展示哪段文字：优先创建时抓住的那句话，其次选中的原文 */
 export function annotationText(annotation: Pick<Annotation, 'contextText' | 'anchor'>): string {
   return annotation.contextText || annotation.anchor?.text || ''
+}
+
+/**
+ * 找找**同一个位置**是不是已经收过这个词了。
+ *
+ * 手滑连点两次「收藏」会生成两条完全一样的记录（同词、同位置）。
+ * 只对词条去重 —— 同一句话写两条不同的笔记是合理需求，不能拦。
+ */
+export function findVocabAtSameSpot(store: Store, docId: string, anchor: Anchor): Annotation | undefined {
+  return store.annotations.find(
+    (annotation) =>
+      annotation.type === 'vocab' &&
+      annotation.docId === docId &&
+      annotation.anchor?.start === anchor.start &&
+      annotation.anchor?.end === anchor.end
+  )
 }
 
 export function addAnnotation(store: Store, annotation: Annotation): Store {

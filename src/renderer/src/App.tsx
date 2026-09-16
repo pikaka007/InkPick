@@ -33,6 +33,7 @@ export default function App(): JSX.Element {
   const currentDocId = useAppStore((state) => state.currentDocId)
   const init = useAppStore((state) => state.init)
   const openDocument = useAppStore((state) => state.openDocument)
+  const recoveredFromBackup = useAppStore((state) => state.recoveredFromBackup)
   const loadSample = useAppStore((state) => state.loadSample)
   const selectDoc = useAppStore((state) => state.selectDoc)
   const addVocab = useAppStore((state) => state.addVocab)
@@ -91,6 +92,23 @@ export default function App(): JSX.Element {
     void init()
   }, [init])
 
+  /**
+   * 主存档坏了、用备份顶上时要说一声。
+   * 不说的话用户只会发现「最近改的几条没了」，却不知道为什么。
+   */
+  useEffect(() => {
+    if (recoveredFromBackup) {
+      setToast({ message: '主存档读不了，已从备份恢复（可能少了最后几次改动）' })
+    }
+  }, [recoveredFromBackup])
+
+  /** 导入成功也要说一声 —— 但只有换了编码时才说（正常导入界面上已经看得到结果） */
+  const handleOpenDocument = useCallback(async (): Promise<void> => {
+    const imported = await openDocument()
+    if (!imported?.encodingInfo) return
+    setToast({ message: `已导入《${imported.title}》· ${imported.encodingInfo}` })
+  }, [openDocument])
+
   // 关窗时落盘（主进程会等我们回话再关）
   useEffect(() => {
     window.api.onBeforeClose(() => {
@@ -141,6 +159,12 @@ export default function App(): JSX.Element {
       if (currentDocId) saveProgress(currentDocId, offset)
     },
     [currentDocId, saveProgress]
+  )
+
+  // 消息由 Reader 统一发（它才知道动作的上下文），这里只把结果递回去
+  const handleAddVocab = useCallback(
+    (range: OffsetRange, term: string): 'added' | 'duplicate' | 'empty' => addVocab(range, term),
+    [addVocab]
   )
 
   /** 点标注：如果它属于另一本书，先切过去 */
@@ -330,7 +354,7 @@ export default function App(): JSX.Element {
               onToggleAddWord={() => setAddingWord((open) => !open)}
               onAddWord={handleAddWord}
               activeAnnotationId={activeAnnotationId}
-              onOpen={() => void openDocument()}
+              onOpen={() => void handleOpenDocument()}
               onSelectDoc={handleDocChange}
               onRenameDoc={renameDocById}
               onDeleteDoc={(doc) => void handleDeleteDoc(doc)}
@@ -366,7 +390,7 @@ export default function App(): JSX.Element {
             annotations={docAnnotations}
             jump={jump}
             initialOffset={store.progress[doc.id]?.start ?? 0}
-            onAddVocab={(range: OffsetRange, term: string) => addVocab(range, term)}
+            onAddVocab={handleAddVocab}
             onAddNote={(range: OffsetRange, content: string) => addNote(range, content)}
             onProgress={handleProgress}
             onChapterChange={setChapterIndex}
@@ -384,7 +408,7 @@ export default function App(): JSX.Element {
             <h1>InkPick</h1>
             <p>一边读，一边把词和想法钉在原文上。</p>
             <div className="welcome-actions">
-              <button type="button" onClick={() => void openDocument()}>
+              <button type="button" onClick={() => void handleOpenDocument()}>
                 打开一个 TXT
               </button>
               <button type="button" className="ghost" onClick={loadSample}>
