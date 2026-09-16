@@ -497,8 +497,10 @@ export default function Sidebar({
                     <button type="button" className="annotation-main" onClick={() => onJump(note)}>
                       <span className="badge note">记</span>
                       <span className="annotation-text">
-                        <strong>{note.content}</strong>
+                        {/* 先原文（笔记钉在哪句话上），再自己写的内容。
+                            列表里靠原文句子认出「这条记在哪儿」比靠自己写的那句更快 */}
                         <em>{annotationText(note)}</em>
+                        <strong>{note.content}</strong>
                         {showSource && note.docId && docTitles[note.docId] && (
                           <span className="occurrence-source">{docTitles[note.docId]}</span>
                         )}

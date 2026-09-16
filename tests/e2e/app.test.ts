@@ -226,6 +226,20 @@ describe('钉 · 词典', () => {
     expect(await page.locator('.vocab-group').count()).toBe(2)
   })
 
+  it('笔记条目里先显示原文（位置），再显示自己写的内容', async () => {
+    // 用户反馈：这两行换一下更好认 —— 靠原文句子认出「这条记在哪儿」更快
+    const order = await page
+      .locator('.annotation')
+      .first()
+      .locator('.annotation-text > *')
+      .evaluateAll((nodes) => nodes.map((node) => node.tagName.toLowerCase()))
+    expect(order.slice(0, 2)).toEqual(['em', 'strong'])
+
+    // 上一个是原文那句，下一个是自己写的
+    expect(await page.locator('.annotation em').textContent()).toContain('trained to skim')
+    expect(await page.locator('.annotation strong').textContent()).toBe('这句是关键')
+  })
+
   it('词典查不到时显示未收录，并允许自己补一句释义', async () => {
     await collectWord(5, 'InkPick')
 
