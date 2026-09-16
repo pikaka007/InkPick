@@ -84,9 +84,17 @@ export function groupVocab(annotations: Annotation[]): VocabGroup[] {
 }
 
 /** 单词本里显示什么释义：优先词典（已收敛），其次手写 */
+/**
+ * 单词本里显示什么释义。
+ *
+ * **用户手写的优先**：侧栏那个按钮在有词典释义时写的就是「改写释义」，
+ * 用户特意改写就是为了盖掉词典。这里曾经无条件优先词典，
+ * 于是手写的释义存下了却永远看不到 —— 存了不显示比不存还让人困惑。
+ * 想看回词典的，把输入框清空再存一次就行。
+ */
 export function groupDefinition(group: VocabGroup): string {
-  if (group.senses.length > 0) return formatSenses(group.senses)
-  return group.manualDefinition
+  if (group.manualDefinition.trim() !== '') return group.manualDefinition
+  return formatSenses(group.senses)
 }
 
 /** 该分组是否需要用户补一条释义（只在词典确已查不到时才问） */

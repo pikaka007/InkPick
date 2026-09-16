@@ -420,13 +420,9 @@ export default function Sidebar({
                 )}
 
                 <ul className="occurrence-list">
-                  {group.items.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        className={item.id === activeAnnotationId ? 'occurrence active' : 'occurrence'}
-                        onClick={() => onJump(item)}
-                      >
+                  {group.items.map((item) => {
+                    const content = (
+                      <>
                         {item.term && item.term.toLowerCase() !== group.lemma.toLowerCase() && (
                           <span className="occurrence-form">{item.term}</span>
                         )}
@@ -437,17 +433,38 @@ export default function Sidebar({
                         {showSource && item.docId && docTitles[item.docId] && (
                           <span className="occurrence-source">{docTitles[item.docId]}</span>
                         )}
-                      </button>
-                      <button
-                        type="button"
-                        className="annotation-remove"
-                        title="删除"
-                        onClick={() => onRemove(item.id)}
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
+                      </>
+                    )
+
+                    return (
+                      <li key={item.id}>
+                        {/*
+                          手动记的词没有原文位置，点了没地方可跳。
+                          所以这里渲染成 div 而不是 button —— 一个点了没反应的按钮
+                          比一个不能点的行更让人困惑。
+                        */}
+                        {isManual(item) ? (
+                          <div className="occurrence occurrence-static">{content}</div>
+                        ) : (
+                          <button
+                            type="button"
+                            className={item.id === activeAnnotationId ? 'occurrence active' : 'occurrence'}
+                            onClick={() => onJump(item)}
+                          >
+                            {content}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="annotation-remove"
+                          title="删除"
+                          onClick={() => onRemove(item.id)}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    )
+                  })}
                 </ul>
               </li>
             ))}

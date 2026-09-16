@@ -140,6 +140,36 @@ describe('groupDefinition', () => {
     const groups = groupVocab([vocab({ term: 'zzz', lemma: 'zzz', start: 0, lookupStatus: 'missing' })])
     expect(groupDefinition(groups[0])).toBe('')
   })
+
+  // 回归：侧栏那个按钮在有词典释义时写的是「改写释义」，
+  // 但展示逻辑曾经无条件优先词典 —— 用户写的释义存下了却永远看不到
+  it('用户手写的释义盖掉词典的', () => {
+    const groups = groupVocab([
+      vocab({
+        term: 'run',
+        lemma: 'run',
+        start: 0,
+        lookupStatus: 'found',
+        senses: [{ pos: 'v.', translation: '跑' }],
+        manualDefinition: '我自己的理解'
+      })
+    ])
+    expect(groupDefinition(groups[0])).toBe('我自己的理解')
+  })
+
+  it('手写被清空后又回到词典释义', () => {
+    const groups = groupVocab([
+      vocab({
+        term: 'run',
+        lemma: 'run',
+        start: 0,
+        lookupStatus: 'found',
+        senses: [{ pos: 'v.', translation: '跑' }],
+        manualDefinition: '   '
+      })
+    ])
+    expect(groupDefinition(groups[0])).toBe('v. 跑')
+  })
 })
 
 describe('needsManualDefinition', () => {

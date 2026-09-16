@@ -106,6 +106,9 @@ export default function App(): JSX.Element {
    * 没有打开书时强制看「全部」——
    * 一个只用手动记词、压根不导入书的用户，否则会看到一个空列表，
    * 而「本文件」对他没有任何意义。
+   *
+   * 注意这里是**显示层**的派生，不写回 scope：scope 是用户的偏好，
+   * 没书时先给他看全部，等他打开书再按偏好显示那本书的词。
    */
   const activeScope: 'doc' | 'all' = currentDocId ? scope : 'all'
   const visibleAnnotations = activeScope === 'all' ? store.annotations : docAnnotations

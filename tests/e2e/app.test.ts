@@ -1539,3 +1539,107 @@ describe('手动记词', () => {
     await expect.poll(lemmaList).toContain('ephemeral')
   })
 })
+
+/**
+ * 用户报的两个 bug 的回归测试。放在最后，沿用上面 describe 留下的应用实例。
+ *
+ * 依赖关系处理：这两个用例各自把需要的前置条件造出来（要书就自己导入一本书），
+ * 不依赖上一个用例的收尾状态。
+ */
+describe('修过的两个 bug', () => {
+  const openAddWord = async (): Promise<void> => {
+    if ((await page.locator('.add-word-input').count()) === 0) {
+      await page.getByRole('button', { name: '手动添加单词' }).click()
+      await page.waitForSelector('.add-word-input')
+    }
+  }
+
+  const addWord = async (term: string): Promise<void> => {
+    await openAddWord()
+    await page.locator('.add-word-input').fill(term)
+    await page.locator('.add-word-input').press('Enter')
+  }
+
+  it('bug1：手动记的词那一行不再是「点了没反应的按钮」', async () => {
+    await addWord('habit')
+    const group = await vocabGroup('habit')
+
+    // 它现在是一个 div —— 点了没反应的按钮比不能点更让人困惑
+    await expect.poll(async () => group.locator('.occurrence-static').count()).toBe(1)
+    expect(await group.locator('button.occurrence').count()).toBe(0)
+    // 但「手动」标记还在，用户仍然能看出这个词是自己记的
+    expect(await group.locator('.badge.manual').textContent()).toBe('手动')
+    // 它也不该看起来能点：光标不能是手型
+    expect(
+      await page.evaluate(
+        () => getComputedStyle(document.querySelector('.occurrence-static') as Element).cursor
+      )
+    ).toBe('default')
+  })
+
+  it('bug1 反面：书里划到的词那一行仍然可以点回原文', async () => {
+    // 造一本书，并把 resilience 同时做成「手动记的」和「书里划到的」
+    const file = join(exportDir, 'mixed-source.txt')
+    await writeFile(file, 'Reading slowly is a resilience habit worth keeping.\n', 'utf-8')
+    await app.evaluate(({ dialog }, target) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [target] })
+    }, file)
+    await page.getByRole('button', { name: '打开 TXT' }).click()
+    await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe('mixed-source')
+
+    // 自己把范围切到「全部」：打开一本书会把列表切回「本文件」，
+    // 而手动词不属于任何书，不切就看不到。不依赖上一个用例的收尾状态。
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+
+    await addWord('solitude') // 造一个纯手动词的对照
+    await addWord('resilience') // 已有则被去重拦住，不影响下面的断言
+    await collectWord(0, 'resilience')
+
+    const mixed = await vocabGroup('resilience')
+    await expect.poll(async () => mixed.locator('.occurrence').count()).toBe(2)
+    // 同一个词的两条：手动那条不可点，书里那条可点
+    expect(await mixed.locator('.occurrence-static').count()).toBe(1)
+    expect(await mixed.locator('button.occurrence').count()).toBe(1)
+
+    await mixed.locator('button.occurrence').click()
+    await expect.poll(async () => mixed.locator('.occurrence.active').count()).toBe(1)
+
+    // 纯手动词的那个词里，一条可点的都没有
+    const pure = await vocabGroup('solitude')
+    expect(await pure.locator('button.occurrence').count()).toBe(0)
+    expect(await pure.locator('.occurrence-static').count()).toBe(1)
+  })
+
+  it('bug2：给词典里有释义的词改写释义，显示的就是改写后的', async () => {
+    // 手动词不属于任何书，先确保范围是「全部」
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    await addWord('habit')
+    const group = await vocabGroup('habit')
+
+    // 前置条件：词典确实给了释义 —— 不然这条测的不是用户报的那个场景
+    const before = (await group.locator('.vocab-definition').textContent()) ?? ''
+    expect(before).not.toBe('')
+    expect(before).not.toBe('我自己的理解')
+
+    // 按钮上有词典释义时写的是「改写释义」，那就得真的能改写
+    expect(await group.locator('.define-button').getAttribute('title')).toBe('改写释义')
+    await group.locator('.define-button').click()
+    await group.locator('.define-editor input').fill('我自己的理解')
+    await group.locator('.define-editor button').click()
+
+    await expect.poll(async () => group.locator('.vocab-definition').textContent()).toBe('我自己的理解')
+  })
+
+  it('bug2 补充：清空手写释义后回到词典的', async () => {
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    const group = await vocabGroup('habit')
+    expect(await group.locator('.vocab-definition').textContent()).toBe('我自己的理解')
+
+    await group.locator('.define-button').click()
+    await group.locator('.define-editor input').fill('')
+    await group.locator('.define-editor button').click()
+
+    await expect.poll(async () => group.locator('.vocab-definition').textContent()).not.toBe('我自己的理解')
+    await expect.poll(async () => (await group.locator('.vocab-definition').textContent()) ?? '').toContain('习惯')
+  })
+})
