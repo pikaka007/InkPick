@@ -318,8 +318,8 @@ describe('跨文档单词本', () => {
     expect(await group.locator('.occurrence-source').count()).toBe(0)
   })
 
-  it('切到「全部文档」后同一个词跨书合并成一组，并标出各自出处', async () => {
-    await page.getByRole('button', { name: '全部文档' }).click()
+  it('切到「全部」后同一个词跨书合并成一组，并标出各自出处', async () => {
+    await page.getByRole('button', { name: '全部', exact: true }).click()
 
     const group = await vocabGroup('word')
     await expect.poll(async () => group.locator('.occurrence').count()).toBe(3)
@@ -609,7 +609,7 @@ describe('文档管理', () => {
   })
 
   it('跨文档视图下已删文档的标注不会再冒出来', async () => {
-    await page.getByRole('button', { name: '全部文档' }).click()
+    await page.getByRole('button', { name: '全部', exact: true }).click()
 
     const group = await vocabGroup('word')
     await expect.poll(async () => group.locator('.occurrence').count()).toBe(2)
@@ -1389,5 +1389,153 @@ describe('章节', () => {
 
     // 正文照常可读
     expect(await page.locator('[data-seg]').count()).toBeGreaterThan(3)
+  })
+})
+
+/**
+ * 手动记词。放在最后：它会改词表内容，前面的用例对列表有断言。
+ *
+ * 这个 describe 检查的主线是「**不导入任何书也能用**」——
+ * 一个只想记单词、不读书的用户，不应该在任何一步卡住。
+ */
+describe('手动记词', () => {
+  const openAddWord = async (): Promise<void> => {
+    if ((await page.locator('.add-word-input').count()) === 0) {
+      await page.getByRole('button', { name: '手动添加单词' }).click()
+      await page.waitForSelector('.add-word-input')
+    }
+  }
+
+  const addWord = async (term: string): Promise<void> => {
+    await openAddWord()
+    await page.locator('.add-word-input').fill(term)
+    await page.locator('.add-word-input').press('Enter')
+  }
+
+  /** 词表里能看到的所有词条名 */
+  const lemmaList = (): Promise<string[]> =>
+    page.locator('.vocab-head strong').allTextContents()
+
+  it('没有导入任何书时，词表也是可用的（这里曾经是两个灰按钮）', async () => {
+    // 删掉所有书，回到「只有手动记的词」的状态。
+    // 注意两件事：确认框的桩必须在点之前装好（不然会弹真的原生框卡住），
+    // 以及按钮名要用 exact —— 不写的话「删除 bulk-1」会同时命中 bulk-10/11/12。
+    await page.getByRole('button', { name: '文档', exact: true }).click()
+    for (let guard = 0; guard < 40; guard++) {
+      const count = await page.locator('.doc-item').count()
+      if (count === 0) break
+      const title = await page.locator('.doc-item .doc-title').first().textContent()
+      await stubConfirm(0)
+      await page.getByRole('button', { name: `删除 ${title}`, exact: true }).click()
+      await expect.poll(async () => page.locator('.doc-item').count()).toBe(count - 1)
+    }
+    await expect.poll(async () => page.locator('.doc-item').count()).toBe(0)
+
+    // 关键：范围按钮不再是灰的，「全部」能点、能看词表
+    const allTab = page.getByRole('button', { name: '全部', exact: true })
+    expect(await allTab.isDisabled()).toBe(false)
+    expect(await page.locator('.annotation-list').count()).toBe(1)
+  })
+
+  it('在欢迎页也能直接记一个词', async () => {
+    await expect.poll(async () => page.locator('.welcome h1').count()).toBe(1)
+    await page.getByRole('button', { name: '先记一个单词' }).click()
+
+    // 侧栏收着的时候要先展开，否则输入框根本不在屏幕上
+    await page.waitForSelector('.add-word-input')
+    expect(await page.locator('.sidebar').count()).toBe(1)
+
+    await page.locator('.add-word-input').fill('solitude')
+    await page.locator('.add-word-input').press('Enter')
+    await expect.poll(lemmaList).toContain('solitude')
+  })
+
+  it('连接着记多个：回车后清空并保持焦点', async () => {
+    await openAddWord()
+    const input = page.locator('.add-word-input')
+
+    await input.fill('serendipity')
+    await input.press('Enter')
+    // 输入框清空，焦点还在 —— 这样能连着记一串而不用碰鼠标
+    await expect.poll(async () => input.inputValue()).toBe('')
+    expect(
+      await page.evaluate(() => document.activeElement?.className ?? '')
+    ).toContain('add-word-input')
+
+    await input.fill('ephemeral')
+    await input.press('Enter')
+    await expect.poll(lemmaList).toContain('ephemeral')
+    await expect.poll(lemmaList).toContain('serendipity')
+  })
+
+  it('释义自动查好，不用手填', async () => {
+    await addWord('habit')
+    const group = await vocabGroup('habit')
+    // 手动记的词也走同一套查词：音标 + 释义
+    await expect.poll(async () => (await group.locator('.vocab-definition').textContent()) ?? '').toMatch(/\S/)
+  })
+
+  it('词表里标出这个词是手动记的', async () => {
+    const group = await vocabGroup('solitude')
+    await expect.poll(async () => group.locator('.badge.manual').count()).toBe(1)
+    expect(await group.locator('.badge.manual').textContent()).toBe('手动')
+  })
+
+  it('同一个词记两次会被拦住，不会变成两条', async () => {
+    await addWord('habit')
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('已经在词表里')
+
+    // 大小写与空白不敏感
+    await addWord('  HABIT  ')
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('已经在词表里')
+
+    // 词表里仍然只有一条 habit，而不是两条
+    const habitCount = (await lemmaList()).filter((name) => name.toLowerCase() === 'habit').length
+    expect(habitCount).toBe(1)
+  })
+
+  it('空输入不会存下任何东西', async () => {
+    await openAddWord()
+    const before = (await lemmaList()).length
+    await page.locator('.add-word-input').fill('   ')
+    await page.locator('.add-word-input').press('Enter')
+    expect((await lemmaList()).length).toBe(before)
+  })
+
+  it('词典里查不到的词可以自己补一句释义', async () => {
+    // 造一个词典里肯定没有的「词」
+    await addWord('zzq-notaword')
+    const group = await vocabGroup('zzq-notaword')
+
+    await expect.poll(async () => group.locator('.missing').count()).toBeGreaterThan(0)
+    await group.locator('.define-button').click()
+    await group.locator('.define-editor input').fill('我自己编的释义')
+    await group.locator('.define-editor button').click()
+    await expect.poll(async () => group.locator('.vocab-definition').textContent()).toBe('我自己编的释义')
+  })
+
+  it('手动词会被写进存档，重开后还在', async () => {
+    await app.close()
+    const raw = await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')
+    const persisted = JSON.parse(raw) as { annotations: { term?: string; anchor?: unknown; docId?: unknown }[] }
+
+    const manual = persisted.annotations.filter((item) => item.term === 'solitude')
+    expect(manual).toHaveLength(1)
+    // 手动词在存档里就是没有 docId、没有 anchor
+    expect(manual[0].anchor).toBeUndefined()
+    expect(manual[0].docId).toBeUndefined()
+
+    await launch()
+    await page.waitForSelector('.welcome')
+    await expect.poll(lemmaList).toContain('solitude')
+  })
+
+  it('手动词可以删掉，也能撤销回来', async () => {
+    const group = await vocabGroup('ephemeral')
+    await group.locator('.occurrence').first().locator('..').locator('.annotation-remove').click()
+
+    await expect.poll(async () => page.locator('.toast').textContent()).toContain('已删除')
+    await page.getByRole('button', { name: '撤销' }).click()
+    await expect.poll(lemmaList).toContain('ephemeral')
   })
 })

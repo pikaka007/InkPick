@@ -34,10 +34,18 @@ export interface Sense {
 
 export interface Annotation {
   id: string
-  docId: string
+  /**
+   * 来自哪本书。**手动添加的词没有来源书**，这里是 undefined。
+   * 所以不要直接拿去查表，要先判空。
+   */
+  docId?: string
   type: AnnotationType
-  anchor: Anchor
-  /** 选中文本所在的那句话（创建时快照，原文改动后依然可读） */
+  /**
+   * 在原文中的位置。**手动添加的词没有位置**，这里是 undefined。
+   * 「有没有 anchor」就是「这个词来自阅读还是手动加的」的判据（见 core/store.ts 的 isManual）。
+   */
+  anchor?: Anchor
+  /** 选中文本所在的那句话（创建时快照，原文改动后依然可读）。手动词为空串 */
   contextText: string
   /** type === 'vocab' 时的词条（用户当时选中的原样） */
   term?: string

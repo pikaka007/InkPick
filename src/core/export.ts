@@ -7,6 +7,7 @@
 import type { Annotation, Doc } from './types'
 import type { VocabGroup } from './vocab'
 import { groupDefinition, groupVocab } from './vocab'
+import { annotationText } from './store'
 import { formatSenses } from './senses'
 
 /* ---------- CSV ---------- */
@@ -18,7 +19,7 @@ export type DocTitles = Record<string, string>
 function titlesOf(items: Annotation[], titles: DocTitles): string[] {
   const result: string[] = []
   for (const item of items) {
-    const title = titles[item.docId]
+    const title = item.docId ? titles[item.docId] : undefined
     if (title && !result.includes(title)) result.push(title)
   }
   return result
@@ -51,7 +52,7 @@ export function vocabToAnkiCsv(groups: VocabGroup[], titles: DocTitles): string 
       group.phonetic,
       definitionOf(group),
       // 多次收藏的上下文各占一行：Anki 卡片背面看起来更清楚
-      group.items.map((item) => item.contextText || item.anchor.text).join('\n'),
+      group.items.map((item) => annotationText(item)).join('\n'),
       titlesOf(group.items, titles).join(' / ')
     ])
   )
@@ -97,7 +98,7 @@ export function annotationsToMarkdown(
       lines.push('')
       for (const item of group.items) {
         const form = formLabel(item, group)
-        lines.push(`- ${form}${item.contextText || item.anchor.text}`)
+        lines.push(`- ${form}${annotationText(item)}`)
       }
       if (group.manualDefinition && group.senses.length > 0) {
         lines.push(`- （手写）${group.manualDefinition}`)
@@ -111,7 +112,7 @@ export function annotationsToMarkdown(
     for (const note of notes) {
       lines.push(`### ${note.content ?? ''}`)
       lines.push('')
-      lines.push(`> ${note.contextText || note.anchor.text}`)
+      lines.push(`> ${annotationText(note)}`)
       lines.push('')
     }
   }
@@ -159,9 +160,9 @@ export function libraryToMarkdown(
       )
       lines.push('')
       for (const item of group.items) {
-        const source = titles[item.docId]
+        const source = item.docId ? titles[item.docId] : undefined
         lines.push(
-          `- ${formLabel(item, group)}${item.contextText || item.anchor.text}${source ? ` （${source}）` : ''}`
+          `- ${formLabel(item, group)}${annotationText(item)}${source ? ` （${source}）` : ''}`
         )
       }
       lines.push('')
@@ -177,7 +178,7 @@ export function libraryToMarkdown(
       lines.push(`### ${doc.title}`, '')
       for (const note of docNotes) {
         lines.push(`**${note.content ?? ''}**`, '')
-        lines.push(`> ${note.contextText || note.anchor.text}`, '')
+        lines.push(`> ${annotationText(note)}`, '')
       }
     }
   }

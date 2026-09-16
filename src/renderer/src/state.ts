@@ -10,6 +10,7 @@ import {
   createEmptyStore,
   createId,
   deserializeStore,
+  findExistingVocab,
   getDoc,
   insertAnnotationAt,
   removeAnnotation,
@@ -58,6 +59,11 @@ interface AppState {
   selectDoc: (docId: string) => void
   addVocab: (range: OffsetRange, term: string) => void
   addNote: (range: OffsetRange, content: string) => void
+  /**
+   * 手动记一个词 —— 不来自任何书，所以没有 docId 也没有 anchor。
+   * 返回值直接给界面用：空输入 / 已经收过 / 真的存下了
+   */
+  addManualWord: (term: string) => 'added' | 'duplicate' | 'empty'
   removeAnnotationById: (id: string) => void
   /** 删除文档，级联清掉它的标注与进度 */
   removeDocById: (docId: string) => void
@@ -178,6 +184,27 @@ export const useAppStore = create<AppState>((set, get) => {
       createAnnotationFor('note', range, { content })
     },
 
+    /**
+     * 手动记一个词。没有书、没有位置，所以不走 createAnnotationFor。
+     * 与划词收藏同一条原则：先钉住（同步入库）、再查词（异步、可失败、可补查）。
+     */
+    addManualWord: (term) => {
+      const trimmed = term.trim()
+      if (!trimmed) return 'empty'
+      // 同一个词加两次，列表里只会变成 ×2，没有意义
+      if (findExistingVocab(get().store, trimmed)) return 'duplicate'
+
+      const annotation = createAnnotation({
+        type: 'vocab',
+        term: trimmed,
+        contextText: '',
+        lookupStatus: 'pending'
+      })
+      commit((store) => addAnnotation(store, annotation))
+      void get().lookupAndPatch(trimmed, [annotation.id])
+      return 'added'
+    },
+
     removeAnnotationById: (id) => commit((store) => removeAnnotation(store, id)),
 
     removeDocById: (docId) => {
@@ -240,7 +267,7 @@ async function backfillPending(): Promise<void> {
 
   const byTerm = new Map<string, string[]>()
   for (const annotation of pendingVocab) {
-    const term = (annotation.term ?? annotation.anchor.text).trim()
+    const term = (annotation.term || annotation.anchor?.text || '').trim()
     if (!term) continue
     const ids = byTerm.get(term) ?? []
     ids.push(annotation.id)

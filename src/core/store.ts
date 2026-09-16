@@ -2,7 +2,7 @@
  * Store —— 纯状态操作。不碰文件系统、不碰 DOM，方便单测。
  * 持久化由 shell 负责（当前实现：main 进程写单个 JSON 文件，见 src/main/storeFile.ts）。
  */
-import type { Anchor, Annotation, AnnotationType, Doc, Store } from './types'
+import type { Anchor, Annotation, AnnotationType, Doc, LookupStatus, Store } from './types'
 import { clamp } from './text'
 import { DEFAULT_PREFS, normalizePrefs } from './prefs'
 import type { ReaderPrefs } from './prefs'
@@ -54,12 +54,16 @@ export function getDoc(store: Store, docId: string): Doc | undefined {
 }
 
 export interface NewAnnotationInput {
-  docId: string
+  /** 手动添加的词没有来源书 */
+  docId?: string
   type: AnnotationType
-  anchor: Anchor
-  contextText: string
+  /** 手动添加的词没有位置 */
+  anchor?: Anchor
+  contextText?: string
   term?: string
   content?: string
+  /** 刚收藏、还没查词时传 'pending' */
+  lookupStatus?: LookupStatus
   now?: number
 }
 
@@ -70,12 +74,50 @@ export function createAnnotation(input: NewAnnotationInput): Annotation {
     docId: input.docId,
     type: input.type,
     anchor: input.anchor,
-    contextText: input.contextText,
+    contextText: input.contextText ?? '',
     term: input.term,
     content: input.content,
+    lookupStatus: input.lookupStatus,
     createdAt: now,
     updatedAt: now
   }
+}
+
+/**
+ * 是不是「手动添加的词」—— 判断依据是缺 docId 或 anchor。
+ *
+ * 刻意**不额外存一个 source 字段**：那样它会和 docId/anchor 存在两份事实，
+ * 早晚出现 source 说是手动、却又有 anchor 的脏数据。派生比存储可靠。
+ */
+export function isManual(annotation: Annotation): boolean {
+  return !annotation.docId || !annotation.anchor
+}
+
+/**
+ * 找找词表里是不是已经有这个词了。
+ *
+ * 两个都比一遍：**分组键**（lemma 优先）和**用户当时输入的原词**。
+ * 只比分组键会漏：先收了 runs（lemma=run），再手动加 runs 时
+ * 用 'runs' 去比 'run' 就比不到，于是重复的又被放进去。
+ */
+export function findExistingVocab(store: Store, term: string): Annotation | undefined {
+  const key = term.trim().toLowerCase()
+  if (!key) return undefined
+  return store.annotations.find(
+    (annotation) =>
+      annotation.type === 'vocab' &&
+      (vocabKeyOf(annotation) === key || (annotation.term ?? '').trim().toLowerCase() === key)
+  )
+}
+
+/** 分组的依据：lemma 优先，其次用户输入的原词，最后回退到原文 */
+export function vocabKeyOf(annotation: Annotation): string {
+  return (annotation.lemma || annotation.term || annotation.anchor?.text || '').trim().toLowerCase()
+}
+
+/** 列表里展示哪段文字：优先创建时抓住的那句话，其次选中的原文 */
+export function annotationText(annotation: Pick<Annotation, 'contextText' | 'anchor'>): string {
+  return annotation.contextText || annotation.anchor?.text || ''
 }
 
 export function addAnnotation(store: Store, annotation: Annotation): Store {
@@ -165,14 +207,19 @@ function isDoc(value: unknown): value is Doc {
 
 function isAnnotation(value: unknown): value is Annotation {
   const a = value as Partial<Annotation> | null
-  return (
-    !!a &&
-    typeof a.id === 'string' &&
-    typeof a.docId === 'string' &&
-    (a.type === 'vocab' || a.type === 'note') &&
+  if (!a || typeof a.id !== 'string') return false
+  if (a.type !== 'vocab' && a.type !== 'note') return false
+
+  const hasDoc = typeof a.docId === 'string' && a.docId.length > 0
+  const hasAnchor =
     !!a.anchor &&
     typeof a.anchor.start === 'number' &&
     typeof a.anchor.end === 'number' &&
     typeof a.anchor.text === 'string'
-  )
+
+  // 两者必须同进同退：
+  //   都有 → 来自阅读的正常标注
+  //   都没有 → 用户手动添加的词
+  //   只有一半 → 脏数据，丢掉（而不是带进内存里让它到处判空）
+  return hasDoc === hasAnchor
 }

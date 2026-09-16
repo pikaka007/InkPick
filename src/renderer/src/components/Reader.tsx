@@ -208,6 +208,8 @@ export default function Reader({
     const vocab: Range[] = []
     const notes: Range[] = []
     for (const annotation of annotations) {
+      // 手动词没有位置，画不了高亮
+      if (!annotation.anchor) continue
       const resolved = resolveAnchor(doc.content, annotation.anchor)
       if (!resolved) continue
       const range = rangeForOffsets(root, starts, resolved)

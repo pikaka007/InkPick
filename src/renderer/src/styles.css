@@ -332,6 +332,64 @@ button.ghost:hover {
   text-transform: none;
 }
 
+/* h2 右侧的一组：计数 + 加词按钮 */
+.h2-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 加词入口。放在标题行右侧，一眼能看到，又不占列表空间 */
+.add-word-toggle {
+  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+}
+
+.add-word-toggle:hover {
+  background: var(--hover);
+}
+
+.add-word-toggle.active {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 手动记词。回车存下后清空并保持焦点，方便连着记一串 */
+.add-word-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.add-word-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+}
+
+.add-word-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.add-word-row button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .empty {
   margin: 0;
   color: var(--text-dim);
@@ -569,6 +627,19 @@ ul {
   background: var(--note);
 }
 
+/* 「手动」不是方形图标，是文字标签，所以覆盖掉 .badge 的固定尺寸 */
+.badge.manual {
+  width: auto;
+  height: auto;
+  margin-top: 0;
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 14px;
+  border-radius: 3px;
+  color: var(--text-dim);
+  background: var(--hover);
+}
+
 .annotation-text {
   display: flex;
   flex-direction: column;
@@ -795,8 +866,7 @@ ul {
 }
 
 .occurrence-source {
-  font-size: 10px;
-  color: var(--text-dim);
+  font-size: 10px;  color: var(--text-dim);
   opacity: 0.8;
   overflow: hidden;
   text-overflow: ellipsis;

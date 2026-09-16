@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { chapterLength, truncateTitle } from '@core/chapters'
 import type { Chapter } from '@core/chapters'
+import { annotationText, isManual } from '@core/store'
 import { groupDefinition, groupVocab, needsManualDefinition } from '@core/vocab'
 import type { VocabGroup } from '@core/vocab'
 import type { Annotation, Doc } from '@core/types'
@@ -25,6 +26,11 @@ interface SidebarProps {
   showSource: boolean
   scope: 'doc' | 'all'
   onScopeChange: (scope: 'doc' | 'all') => void
+  /** 手动记词的输入条是否展开（由 App 控制，欢迎页也能把它打开） */
+  addingWord: boolean
+  onToggleAddWord: () => void
+  /** 返回结果：App 负责弹提示，侧栏据此决定要不要清空输入 */
+  onAddWord: (term: string) => 'added' | 'duplicate' | 'empty'
   activeAnnotationId: string | null
   onOpen: () => void
   onSelectDoc: (docId: string) => void
@@ -39,7 +45,9 @@ interface SidebarProps {
 }
 
 const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: '全部' },
+  // 叫「不限」而不是「全部」：范围那一行已经有一个「全部」了（本文件 / 全部），
+  // 同一个面板里出现两个「全部」会分不清哪个是筛来源、哪个是筛类型
+  { key: 'all', label: '不限' },
   { key: 'vocab', label: '词条' },
   { key: 'note', label: '笔记' }
 ]
@@ -54,6 +62,9 @@ export default function Sidebar({
   showSource,
   scope,
   onScopeChange,
+  addingWord,
+  onToggleAddWord,
+  onAddWord,
   activeAnnotationId,
   onOpen,
   onSelectDoc,
@@ -69,6 +80,19 @@ export default function Sidebar({
   const [filter, setFilter] = useState<Filter>('all')
   const [navView, setNavView] = useState<NavView>('docs')
   const activeChapterRef = useRef<HTMLButtonElement>(null)
+  /** 手动记词的草稿。回车存下后清空并把焦点留在输入框，方便连着记 */
+  const [wordDraft, setWordDraft] = useState('')
+  const wordInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (addingWord) wordInputRef.current?.focus()
+  }, [addingWord])
+
+  const submitWord = (): void => {
+    if (onAddWord(wordDraft) !== 'empty') setWordDraft('')
+    // 连续记录：焦点留在输入框，全程不用碰鼠标
+    wordInputRef.current?.focus()
+  }
   /** 正在补释义的分组 key */
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -247,10 +271,45 @@ export default function Sidebar({
       <section className="sidebar-section grow">
         <h2>
           标注
-          <span className="counts">
-            {vocabGroups.length} 词 · {notes.length} 笔记
+          <span className="h2-right">
+            <span className="counts">
+              {vocabGroups.length} 词 · {notes.length} 笔记
+            </span>
+            <button
+              type="button"
+              className={addingWord ? 'add-word-toggle active' : 'add-word-toggle'}
+              title="手动记一个词 —— 不在书里也行，比如看视频或读论文时遇到的词"
+              aria-label="手动添加单词"
+              aria-expanded={addingWord}
+              onClick={onToggleAddWord}
+            >
+              {addingWord ? '收起' : '＋ 单词'}
+            </button>
           </span>
         </h2>
+
+        {addingWord && (
+          <div className="add-word-row">
+            <input
+              ref={wordInputRef}
+              className="add-word-input"
+              placeholder="输入单词，回车保存（可连着记多个）"
+              aria-label="要记的单词"
+              value={wordDraft}
+              onChange={(event) => setWordDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setWordDraft('')
+                  onToggleAddWord()
+                }
+                if (event.key === 'Enter') submitWord()
+              }}
+            />
+            <button type="button" onClick={submitWord} disabled={!wordDraft.trim()}>
+              保存
+            </button>
+          </div>
+        )}
 
         <div className="filter-tabs">
           <button
@@ -264,10 +323,10 @@ export default function Sidebar({
           <button
             type="button"
             className={scope === 'all' ? 'tab active' : 'tab'}
-            disabled={docs.length === 0}
+            title="所有书里的词，加上你手动记的词"
             onClick={() => onScopeChange('all')}
           >
-            全部文档
+            全部
           </button>
 
           <span className="tabs-spacer" />
@@ -305,7 +364,11 @@ export default function Sidebar({
           ))}
         </div>
 
-        {isEmpty && <p className="empty">选中正文里的文字，就能收藏单词或写笔记。</p>}
+        {isEmpty && (
+          <p className="empty">
+            选中正文里的文字就能收藏单词或笔记；也可以点右上角「＋ 单词」手动记一个，不导入书也能用。
+          </p>
+        )}
 
         <ul className="annotation-list">
           {showVocab &&
@@ -367,8 +430,11 @@ export default function Sidebar({
                         {item.term && item.term.toLowerCase() !== group.lemma.toLowerCase() && (
                           <span className="occurrence-form">{item.term}</span>
                         )}
-                        <span className="occurrence-context">{item.contextText || item.anchor.text}</span>
-                        {showSource && docTitles[item.docId] && (
+                        {isManual(item) && <span className="badge manual">手动</span>}
+                        {annotationText(item) && (
+                          <span className="occurrence-context">{annotationText(item)}</span>
+                        )}
+                        {showSource && item.docId && docTitles[item.docId] && (
                           <span className="occurrence-source">{docTitles[item.docId]}</span>
                         )}
                       </button>
@@ -415,8 +481,8 @@ export default function Sidebar({
                       <span className="badge note">记</span>
                       <span className="annotation-text">
                         <strong>{note.content}</strong>
-                        <em>{note.contextText || note.anchor.text}</em>
-                        {showSource && docTitles[note.docId] && (
+                        <em>{annotationText(note)}</em>
+                        {showSource && note.docId && docTitles[note.docId] && (
                           <span className="occurrence-source">{docTitles[note.docId]}</span>
                         )}
                       </span>

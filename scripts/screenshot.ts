@@ -170,6 +170,18 @@ await page.evaluate(() => {
 await page.waitForTimeout(200)
 await shoot('chapter-divider')
 
+// 手动记词：输入条展开着，并且已经攒了几个不在书里的词
+await page.getByRole('button', { name: '手动添加单词' }).click()
+await page.waitForSelector('.add-word-input')
+for (const word of ['solitude', 'serendipity', 'ephemeral', 'resilience']) {
+  await page.locator('.add-word-input').fill(word)
+  await page.locator('.add-word-input').press('Enter')
+  await page.waitForTimeout(150)
+}
+await page.locator('.add-word-input').fill('habitual')
+await page.waitForTimeout(200)
+await shoot('manual-word')
+
 await app.close()
 await rm(userDataDir, { recursive: true, force: true })
 console.log(`\n完成，产物在 ${OUT_DIR}`)

@@ -39,7 +39,7 @@ describe('groupVocab', () => {
       vocab({ term: 'runs', lemma: 'run', start: 13, createdAt: 1 }),
       vocab({ term: 'run', lemma: 'run', start: 0, createdAt: 2 })
     ])
-    expect(groups[0].items.map((item) => item.anchor.start)).toEqual([0, 13])
+    expect(groups[0].items.map((item) => item.anchor?.start)).toEqual([0, 13])
   })
 
   it('跨文档时先按书分组（按首次标注的先后），组内按位置', () => {
@@ -52,7 +52,7 @@ describe('groupVocab', () => {
 
     // doc-a 先被标注，它的两条排在一起；两本书不能交错
     expect(groups[0].items.map((item) => item.docId)).toEqual(['doc-a', 'doc-a', 'doc-b'])
-    expect(groups[0].items.map((item) => item.anchor.start)).toEqual([0, 10, 0])
+    expect(groups[0].items.map((item) => item.anchor?.start)).toEqual([0, 10, 0])
   })
 
   it('没有 lemma 时退回 term 分组', () => {

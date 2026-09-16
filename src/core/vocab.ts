@@ -8,6 +8,7 @@
  * 所以：按 lemma 分组，一组一条词条，下面挂多次收藏与各自的上下文。
  */
 import type { Annotation, LookupStatus, Sense } from './types'
+import { vocabKeyOf } from './store'
 import { formatSenses } from './senses'
 
 export interface VocabGroup {
@@ -23,15 +24,14 @@ export interface VocabGroup {
 }
 
 function groupKeyOf(annotation: Annotation): string {
-  const basis = annotation.lemma || annotation.term || annotation.anchor.text
-  return basis.trim().toLowerCase()
+  return vocabKeyOf(annotation)
 }
 
 const STATUS_RANK: Record<LookupStatus, number> = { pending: 0, missing: 1, found: 2 }
 
 export function groupVocab(annotations: Annotation[]): VocabGroup[] {
   const groups = new Map<string, VocabGroup>()
-  /** docId → 这本书第一次被标注的顺序 */
+  /** 「哪本书」→ 这本书第一次被标注的顺序。手动词没有书，归到同一个桶 */
   const docRank = new Map<string, number>()
 
   for (const annotation of annotations) {
@@ -40,13 +40,14 @@ export function groupVocab(annotations: Annotation[]): VocabGroup[] {
     const key = groupKeyOf(annotation)
     if (!key) continue
 
-    if (!docRank.has(annotation.docId)) docRank.set(annotation.docId, docRank.size)
+    const docKey = annotation.docId ?? ''
+    if (!docRank.has(docKey)) docRank.set(docKey, docRank.size)
 
     let group = groups.get(key)
     if (!group) {
       group = {
         key,
-        lemma: annotation.lemma || annotation.term || annotation.anchor.text,
+        lemma: annotation.lemma || annotation.term || annotation.anchor?.text || '',
         phonetic: '',
         senses: [],
         manualDefinition: '',
@@ -71,9 +72,10 @@ export function groupVocab(annotations: Annotation[]): VocabGroup[] {
   for (const group of groups.values()) {
     // 先按书分组（按这本书第一次被标注的先后），组内再按原文位置。
     // 单文档时 docRank 是常数，退化成纯位置排序。
+    // 手动词没有位置，用 -1 让它排在原文之前 —— 它是这个词的「种子」
     group.items.sort((a, b) => {
-      const rankDiff = (docRank.get(a.docId) ?? 0) - (docRank.get(b.docId) ?? 0)
-      return rankDiff !== 0 ? rankDiff : a.anchor.start - b.anchor.start
+      const rankDiff = (docRank.get(a.docId ?? '') ?? 0) - (docRank.get(b.docId ?? '') ?? 0)
+      return rankDiff !== 0 ? rankDiff : (a.anchor?.start ?? -1) - (b.anchor?.start ?? -1)
     })
   }
 

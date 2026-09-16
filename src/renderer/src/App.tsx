@@ -37,6 +37,7 @@ export default function App(): JSX.Element {
   const selectDoc = useAppStore((state) => state.selectDoc)
   const addVocab = useAppStore((state) => state.addVocab)
   const addNote = useAppStore((state) => state.addNote)
+  const addManualWord = useAppStore((state) => state.addManualWord)
   const removeAnnotationById = useAppStore((state) => state.removeAnnotationById)
   const removeDocById = useAppStore((state) => state.removeDocById)
   const renameDocById = useAppStore((state) => state.renameDocById)
@@ -55,7 +56,9 @@ export default function App(): JSX.Element {
   const [jump, setJump] = useState<JumpTarget | null>(null)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
-  /** 单词本/笔记列表看的是当前文档还是全部文档 */
+  /** 手动记词的输入条是否展开 */
+  const [addingWord, setAddingWord] = useState(false)
+  /** 单词本/笔记列表看的是当前文档还是全部 */
   const [scope, setScope] = useState<'doc' | 'all'>('doc')
 
   useEffect(() => {
@@ -66,6 +69,23 @@ export default function App(): JSX.Element {
   }, [toast])
 
   const notify = useCallback((message: string) => setToast({ message }), [])
+
+  /** 展开手动记词的输入条。侧栏收着的时候先展开，否则输入框根本不在屏幕上 */
+  const startAddWord = useCallback((): void => {
+    if (useAppStore.getState().store.prefs.sidebarCollapsed) updatePrefs({ sidebarCollapsed: false })
+    setAddingWord(true)
+  }, [updatePrefs])
+
+  const handleAddWord = useCallback(
+    (term: string): 'added' | 'duplicate' | 'empty' => {
+      const result = addManualWord(term)
+      const label = term.trim()
+      if (result === 'added') notify(`已记下 ${label}`)
+      else if (result === 'duplicate') notify(`${label} 已经在词表里了`)
+      return result
+    },
+    [addManualWord, notify]
+  )
 
   useEffect(() => {
     void init()
@@ -82,7 +102,13 @@ export default function App(): JSX.Element {
 
   const doc = currentDocId ? (store.docs.find((item) => item.id === currentDocId) ?? null) : null
   const docAnnotations = currentDocId ? store.annotations.filter((item) => item.docId === currentDocId) : []
-  const visibleAnnotations = scope === 'all' ? store.annotations : docAnnotations
+  /**
+   * 没有打开书时强制看「全部」——
+   * 一个只用手动记词、压根不导入书的用户，否则会看到一个空列表，
+   * 而「本文件」对他没有任何意义。
+   */
+  const activeScope: 'doc' | 'all' = currentDocId ? scope : 'all'
+  const visibleAnnotations = activeScope === 'all' ? store.annotations : docAnnotations
   const docTitles = Object.fromEntries(store.docs.map((item) => [item.id, item.title]))
 
   /**
@@ -116,6 +142,9 @@ export default function App(): JSX.Element {
 
   /** 点标注：如果它属于另一本书，先切过去 */
   const handleJump = (annotation: Annotation): void => {
+    // 手动添加的词没有位置也没有来源书，点它不跳转（它本来就在词表里）
+    if (!annotation.docId || !annotation.anchor) return
+
     const target = store.docs.find((item) => item.id === annotation.docId)
     if (!target) return
 
@@ -187,17 +216,17 @@ export default function App(): JSX.Element {
       setToast({ message: '还没有可导出的标注' })
       return
     }
-    if (scope === 'doc' && !doc) return
+    if (activeScope === 'doc' && !doc) return
 
     const content =
       kind === 'vocab'
         ? vocabToAnkiCsv(groupVocab(visibleAnnotations), docTitles)
-        : scope === 'doc'
+        : activeScope === 'doc'
           ? annotationsToMarkdown(visibleAnnotations, doc!)
           : libraryToMarkdown(store.docs, visibleAnnotations)
 
     const fileName =
-      scope === 'doc'
+      activeScope === 'doc'
         ? suggestedFileName(doc!.title, kind, kind === 'vocab' ? 'csv' : 'md')
         : libraryFileName(kind, kind === 'vocab' ? 'csv' : 'md')
 
@@ -291,9 +320,12 @@ export default function App(): JSX.Element {
               chapterIndex={chapterIndex}
               annotations={visibleAnnotations}
               docTitles={docTitles}
-              showSource={scope === 'all'}
-              scope={scope}
+              showSource={activeScope === 'all'}
+              scope={activeScope}
               onScopeChange={setScope}
+              addingWord={addingWord}
+              onToggleAddWord={() => setAddingWord((open) => !open)}
+              onAddWord={handleAddWord}
               activeAnnotationId={activeAnnotationId}
               onOpen={() => void openDocument()}
               onSelectDoc={handleDocChange}
@@ -355,11 +387,15 @@ export default function App(): JSX.Element {
               <button type="button" className="ghost" onClick={loadSample}>
                 先看看示例
               </button>
+              <button type="button" className="ghost" onClick={startAddWord}>
+                先记一个单词
+              </button>
             </div>
             <ol className="welcome-steps">
               <li>打开文本，滚动阅读</li>
               <li>选中一段文字 → 收藏单词 或 写笔记</li>
               <li>左侧列表随时点回原文那句</li>
+              <li>不想导入书也行：点左下角「＋ 单词」，手动记下来</li>
             </ol>
           </main>
         )}
