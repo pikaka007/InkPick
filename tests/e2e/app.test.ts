@@ -2362,3 +2362,35 @@ describe('复习设置', () => {
     expect(await page.locator('.review-settings .tab.active').textContent()).toBe('手动')
   })
 })
+
+/**
+ * 安全基线。放在最后，只读不写。
+ */
+describe('安全基线', () => {
+  it('CSP 真的生效：内联脚本被拦下来', async () => {
+    // 光在配置里写 CSP 不算数。两种「写了但没用」的坑都踩过：
+    //   1. 用主进程拦响应头 —— 实测对 file:// 不生效，打包后等于没配
+    //   2. 用 page.evaluate 里的 eval 去验 —— Playwright 会绕过 CSP，永远验不出来
+    // 所以这里从页面自己的路径来：动态插一个内联脚本，看它能不能执行。
+    // script-src 是 'self'，没有 nonce 的内联脚本应该被判死。
+    const inlineRan = await page.evaluate(() => {
+      const element = document.createElement('script')
+      element.textContent = 'globalThis.__cspProbe = true'
+      document.head.appendChild(element)
+      const ran = (globalThis as unknown as { __cspProbe?: boolean }).__cspProbe === true
+      element.remove()
+      return ran
+    })
+    expect(inlineRan).toBe(false)
+  })
+
+  it('页面里确实带着 CSP 声明', async () => {
+    const policy = await page.evaluate(
+      () =>
+        document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute('content') ?? ''
+    )
+    expect(policy).toContain("script-src 'self'")
+    // 生产环境不该允许 eval
+    expect(policy).not.toContain('unsafe-eval')
+  })
+})

@@ -28,6 +28,35 @@
 范围与不做的部分见 [`docs/MVP.md`](docs/MVP.md)；**还缺什么、缺到什么程度，见 [`docs/ROADMAP.md`](docs/ROADMAP.md)**；
 词库见 [`docs/DICTIONARY.md`](docs/DICTIONARY.md)，导出格式与 Anki 导入步骤见 [`docs/EXPORT.md`](docs/EXPORT.md)。
 
+## 打包（安装包）
+
+```bash
+npm run dist        # 出安装包（Windows：release/InkPick-0.0.1-setup.exe）
+npm run dist:dir    # 只出解包目录（快，不生成安装包）
+npm run check:package   # 验打出来的产物真能跑（需先 dist:dir）
+npm run icon        # 重新生成应用图标（改配色/形状时用）
+```
+
+安装包是 NSIS 的：可选安装目录、建桌面与开始菜单快捷方式、**不是静默安装**（`oneClick: false`）。
+
+### 升级会不会把数据弄丢？
+
+**不会。** 存档目录被显式定死成 `userData/inkpick`，
+跟 `npm run dev` 时用的是**同一个目录**。
+
+这一点必须显式做：Electron 的 userData 目录名取的是应用名，
+而打包后的应用名是 `productName`（`InkPick`），dev 时是 `name`（`inkpick`）。
+Windows 不区分大小写看不出问题，macOS / Linux 会变成两个目录 ——
+用户会以为「升级之后数据全没了」（其实在旧目录）。
+`npm run check:package` 会把这一点验一遍。
+
+### 还没做的
+
+- **代码签名**：没有证书，Windows 首次运行会弹 SmartScreen 警告，
+  需要点「更多信息 → 仍要运行」
+- **自动更新**：没配（`latest.yml` 已经生成了，接的时候能用）
+- **macOS / Linux 包**：只在 Windows 上验过，`dist` 默认出当前平台的包
+
 ## 快速开始
 
 ```bash
@@ -44,12 +73,17 @@ npm 11 会为此打一条 `Unknown project config` 警告，可忽略。
 ## 常用命令
 
 ```bash
-npm test             # 单元测试（Vitest，236 个）
-npm run test:e2e     # 端到端测试（Playwright 驱动真实 Electron，56 个，会先构建）
+npm test             # 单元测试（Vitest，347 个）
+npm run test:e2e     # 端到端（Playwright 驱动真实 Electron，120 个，会先构建）
 npm run typecheck    # 类型检查
 npm run build        # 构建到 out/
 npm start            # 预览构建产物
-npm run shot         # 截五张图到 .shots/（主题/选中态），人眼看外观用
+npm run dist         # 出安装包（见上方「打包」）
+npm run check:package  # 验打包产物能跑（需先 dist:dir）
+npm run icon         # 重新生成应用图标
+npm run shot         # 截图到 .shots/，人眼看外观用
+npm run check:docs   # 查文档/测试里有没有被 shell 写坏的字符
+npm run dict:build   # 重建内置词库（需 .dict-src/ 源数据）
 ```
 
 ## 架构
@@ -90,6 +124,12 @@ tests/               Vitest 单测；tests/e2e 是真实 Electron 的验收测�
 
 `app.getPath('userData')/inkpick-store.json`，Windows 上通常是
 `%APPDATA%/inkpick/inkpick-store.json`。删掉它等于清空所有数据。
+
+- 目录名被**显式定死**成 `inkpick`，所以 `npm run dev` 与安装后的版本
+  用的是**同一个目录**（见上方「打包」）
+- 保存时会先留一份上一版：`inkpick-store.json.bak`。
+  主文件读不了时会自动用备份顶上，并明确告诉你
+- E2E 用临时目录（`--user-data-dir`），不会碰真实存档
 
 ## 协作约定
 

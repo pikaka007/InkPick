@@ -76,6 +76,9 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 | 重建词库 | `npm run dict:build`（需 `.dict-src/` 源数据，见 docs/DICTIONARY.md） |
 | 截图 | `npm run shot`（产物在 `.shots/`） |
 | 文档体检 | `npm run check:docs`（查有没有被 shell 吃掉的字符） |
+| 打包 | `npm run dist`（安装包）/ `npm run dist:dir`（只出解包目录，快） |
+| 验打包产物 | `npm run check:package`（**需先跑一次 `dist:dir`**） |
+| 应用图标 | `npm run icon`（改配色 / 形状时用；脚本带自检） |
 | Lint | **尚未接入** —— 补上之前不要假装跑过 |
 
 改动后的最低要求：
@@ -84,6 +87,15 @@ InkPick：集阅读器、单词本、笔记于一体的个人学习工具。
 - 动了界面 / 主进程 / 持久化：还要跑 `npm run test:e2e`
 - 改了 `src/core/anchor.ts`、`src/renderer/src/selection.ts`、`src/main/storeFile.ts`、
   关窗落盘握手、或 `resources/dictionary/` 里的词库文件：**必须**跑 `npm run test:e2e`
+- 动了打包配置 / 主进程的路径逻辑 / CSP：**还要**跑 `npm run dist:dir && npm run check:package`
+
+### 打包相关的两个硬约束
+
+1. **userData 目录必须保持 `inkpick`**。打包后应用名是 `productName`（`InkPick`），
+   万一有人把这行 `app.setPath` 删掉，用户会以为「升级后数据全没了」。
+   `npm run check:package` 会验。
+2. **传了 `--user-data-dir` 时不能覆盖 userData** —— E2E 靠它做数据隔离，
+   覆盖了就写进真实存档。
 
 ### 界面改动怎么验证
 
@@ -162,6 +174,8 @@ src/core/       纯 TS，无框架无 DOM 依赖 —— 业务逻辑全在这里
   search.ts     文内搜索（命中上限、循环跳转）
   csv.ts        ECDICT 的 CSV 解析（容错）
 src/main/       Electron 主进程：窗口、IPC、文件读写、词典
+              （还有一处关键代码：把 userData 目录定死成 inkpick，
+               不然打包后应用名变了会「找不到」旧数据）
 src/preload/    contextBridge 最小 API
 src/renderer/   React 界面；selection.ts 是 DOM 选区 ⇄ 全文偏移量的映射
 resources/dictionary/  内置 mini 词库（已提交，1.7MB）

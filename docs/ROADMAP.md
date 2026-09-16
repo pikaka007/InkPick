@@ -240,6 +240,43 @@ BOM 必须丢掉：留在正文里会让全文偏移整体差一格，所有标�
 「没有原句」的提示和可点的原句共用了 `.review-context`，
 导致「找一张有原句的卡」会点到那个不能点的提示上。已拆成两个 class。
 
+## 已修（第二十二轮）
+
+**打包。** 之前只能 `npm run dev` / `npm start` —— 关掉终端就没了，也没法给别人。
+
+- 接 electron-builder，`npm run dist` 出 NSIS 安装包（可选安装目录、建快捷方式）
+- 应用图标用脚本生成（`npm run icon`，纯像素计算 + zlib 编码 PNG，不引图形库），
+  自带自检：圆角透明、纸页、高亮行、底色都在 —— 图看不了就让它自己证明画对了
+- **★ 存档目录定死**（这一条最重要，见下）
+- **★ CSP 真的配上**（见下）
+- 新增 `npm run check:package`：验**打包产物**真能跑，不只是「能打包」
+
+### 存档目录必须显式定死
+
+Electron 的 userData 目录名取的是应用名，而打包后应用名是 `productName`（`InkPick`），
+dev 时是 `name`（`inkpick`）。Windows 不区分大小写看不出问题，
+macOS / Linux 会变成两个目录 —— **用户会以为「升级之后数据全没了」**（其实在旧目录）。
+
+所以主进程里显式 `app.setPath('userData', <appData>/inkpick)`。
+两个细节：
+- 目录不存在时 `setPath` 会抛错，得先 `mkdirSync`
+- **传了 `--user-data-dir` 时绝不能覆盖**（E2E 靠它做数据隔离），
+  否则测试会写进真实存档。E2E 里本来就有一条断言守着这件事
+
+### CSP 写了但没生效（踩了两次）
+
+第一次用主进程的 `webRequest.onHeadersReceived` 拦响应头 ——
+**实测对 `file://` 不生效**，而打包后渲染层就是 file:// 加载的，
+开发时看着有、上线等于没配。改成在 `index.html` 里插 meta（与加载协议无关），
+由 `electron.vite.config.ts` 里的插件按 dev / 生产注入两套策略。
+
+dev 必须比生产宽松：Vite 要内联脚本、要连 HMR 的 websocket，
+而且它的开发期模块加载会用 `eval`（不加 `unsafe-eval` 会直接白屏）。
+
+验证时又踩了第二个坑：**`page.evaluate` 里的 eval 验不出 CSP** ——
+Playwright 会绕过（CDP 的 `allowUnsafeEvalBlockedByCSP`）。
+改成从页面自己的路径插一个内联脚本看它能不能执行。
+
 ## 二、功能上确实没有的
 
 | 缺口 | 说明 |
@@ -257,14 +294,15 @@ BOM 必须丢掉：留在正文里会让全文偏移整体差一格，所有标�
 
 | 缺口 | 说明 |
 |---|---|
-| **打包** | 没接 electron-builder，现在只能 `npm run dev` / `npm start` |
-| **应用名未定死** | 打包前必须定。Electron 的 userData 目录名优先取 `productName`，一旦和 dev 时不一致，会以为「数据全没了」（其实在旧目录） |
-| **代码签名** | 没有证书，Windows 首次安装会弹 SmartScreen 警告 |
-| **CSP** | 没配。正文全程用 React 文本节点渲染（无 `dangerouslySetInnerHTML`）且不加载远程内容，风险可控，但打包前应补上 |
+| ~~打包~~ | ✅ 已做（第二十二轮，见上方「已修」）|
+| ~~应用名未定死~~ | ✅ 已做：主进程里显式 `app.setPath('userData', ...)`，dev 与打包共用同一个目录 |
+| **代码签名** | 没有证书，Windows 首次运行会弹 SmartScreen 警告 |
+| ~~CSP~~ | ✅ 已做（第二十二轮）。注意是**写在 index.html 的 meta** —— 主进程拦响应头对 file:// 不管用 |
 | **Lint** | 完全没接。`AGENTS.md` 里写明「补上之前不要假装跑过」 |
 | **降级会丢字段** | `deserializeStore` 只保留认识的字段。将来加了新字段后，用旧版本打开再保存，新字段会被静默丢掉 |
 | **一个坏掉的 .tmp 会留下来** | 写盘中途被杀进程会留下 `.tmp`，下次启动会直接覆盖它，不会累积 |
 | **词库更新要重新打包** | `mini.tsv` 用 `?raw` 编进了主进程 bundle。想独立更新词库得改成 `extraResources` / userData 读取 |
+| **只验过 Windows** | `npm run dist` 默认出当前平台的包；macOS / Linux 没跑过，而 userData 路径那一套是按三平台写的 |
 
 ## 四、明确不做（及替代方案）
 

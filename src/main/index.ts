@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { decodeText, describeEncoding } from '../core/decode'
@@ -8,6 +9,25 @@ import { dictionaryStatus, lookupWord } from './dictionary'
 import { isParsableJson, readBackupFile, readStoreFile, storeFilePath, writeStoreFile } from './storeFile'
 
 const isDev = !app.isPackaged
+
+/**
+ * 把存档目录定死成小写的 `inkpick`。
+ *
+ * 为什么要显式定：Electron 的 userData 目录名取的是**应用名**，
+ * 而应用名优先用 package.json 的 productName（打包后是 `InkPick`），
+ * dev 下用的是 name（`inkpick`）。Windows 文件系统不分大小写，看不出问题；
+ * macOS / Linux 会变成两个目录 —— 用户会以为「数据全没了」（其实在旧目录）。
+ *
+ * 例外：E2E 会传 `--user-data-dir` 做数据隔离，那种情况下**绝不能覆盖**，
+ * 否则测试会写进真实存档。
+ */
+const hasCustomUserData = process.argv.some((arg) => arg.startsWith('--user-data-dir'))
+if (!hasCustomUserData) {
+  const pinned = join(app.getPath('appData'), 'inkpick')
+  // setPath 要求目录已存在，不存在会直接抛错
+  mkdirSync(pinned, { recursive: true })
+  app.setPath('userData', pinned)
+}
 
 function createWindow(): void {
   const window = new BrowserWindow({
