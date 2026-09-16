@@ -1290,6 +1290,179 @@ ul {
   margin-top: 12px;
 }
 
+/* ---------- 复习面板 ---------- */
+
+.review-panel {
+  width: min(520px, 90vw);
+  padding: 18px 20px 20px;
+  background: var(--bg);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px var(--shadow);
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.review-progress {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.review-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.review-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* 卡片区高度固定：翻看前后不能跳动，否则连点十几张会很难受 */
+.review-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 230px;
+  padding: 16px 8px;
+  text-align: center;
+}
+
+.review-word {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  font-family: Georgia, 'Songti SC', 'SimSun', serif;
+  word-break: break-word;
+}
+
+.review-phonetic {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.review-reveal {
+  margin-top: 10px;
+  padding: 8px 18px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.review-reveal:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.review-definition {
+  margin: 4px 0 0;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.review-contexts {
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 原句：这个词是在哪儿遇到的 —— 别的背单词软件给不了这一行 */
+.review-context {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.review-context.manual {
+  border-left-color: transparent;
+  padding-left: 0;
+  text-align: center;
+}
+
+.review-grades {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.grade {
+  flex: 1;
+  padding: 11px 0;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.grade:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+/* 三档用颜色区分，但不用红色报错那种语气 —— 「忘了」是正常流程 */
+.grade.forgot:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.grade.fuzzy:hover:not(:disabled) {
+  background: var(--panel);
+}
+
+.grade.remembered:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.grade:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.review-feedback {
+  margin: 10px 0 0;
+  min-height: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.review-done {
+  padding: 46px 8px;
+  text-align: center;
+}
+
+.review-done-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.review-done-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
 .toast {
   position: fixed;
   top: 24px;

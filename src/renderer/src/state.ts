@@ -20,10 +20,13 @@ import {
   serializeStore,
   setPrefs,
   setProgress,
+  setReview,
   updateAnnotation
 } from '@core/store'
-import type { Anchor, Annotation, Doc, Store } from '@core/types'
+import type { Anchor, Annotation, Doc, ReviewState, Store } from '@core/types'
 import type { ReaderPrefs } from '@core/prefs'
+import { nextReview } from '@core/review'
+import type { ReviewGrade } from '@core/review'
 import type { OffsetRange } from './selection'
 
 export type { OffsetRange }
@@ -82,6 +85,8 @@ interface AppState {
   saveProgress: (docId: string, offset: number) => void
   /** 阅读偏好：字号 / 行高 / 行宽 / 主题 */
   updatePrefs: (patch: Partial<ReaderPrefs>) => void
+  /** 复习评一次分。返回新状态，面板据此给一句「下次什么时候见」 */
+  gradeReview: (key: string, grade: ReviewGrade) => ReviewState
 }
 
 export const useAppStore = create<AppState>((set, get) => {
@@ -276,7 +281,13 @@ export const useAppStore = create<AppState>((set, get) => {
       commit((store) => setProgress(store, docId, createAnchor(doc.content, offset, offset)))
     },
 
-    updatePrefs: (patch) => commit((store) => setPrefs(store, patch))
+    updatePrefs: (patch) => commit((store) => setPrefs(store, patch)),
+
+    gradeReview: (key, grade) => {
+      const state = nextReview(get().store.review[key], grade, Date.now())
+      commit((store) => setReview(store, key, state))
+      return state
+    }
   }
 })
 

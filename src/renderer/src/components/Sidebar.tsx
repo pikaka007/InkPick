@@ -32,6 +32,10 @@ interface SidebarProps {
   /** 返回结果：App 负责弹提示，侧栏据此决定要不要清空输入 */
   onAddWord: (term: string) => 'added' | 'duplicate' | 'empty'
   activeAnnotationId: string | null
+  /** 复习：开始一轮复习 */
+  onStartReview: () => void
+  /** 侧栏那个「待复习 N」显示的数字 */
+  reviewCount: number
   onOpen: () => void
   onSelectDoc: (docId: string) => void
   onRenameDoc: (docId: string, title: string) => void
@@ -72,6 +76,8 @@ export default function Sidebar({
   onDeleteDoc,
   onJump,
   onJumpChapter,
+  onStartReview,
+  reviewCount,
   onRemove,
   onSetDefinition,
   onEditNote,
@@ -331,6 +337,17 @@ export default function Sidebar({
 
           <span className="tabs-spacer" />
 
+          {/* 复习入口放右边：它是「去做一件事」，跟左边的筛选不是一类 */}
+          <button
+            type="button"
+            className="tab review-entry"
+            title={reviewCount > 0 ? `开始复习（${reviewCount} 个词到期待复习）` : '这会儿没有到期的词'}
+            disabled={reviewCount === 0}
+            onClick={onStartReview}
+          >
+            待复习 {reviewCount}
+          </button>
+
           <button
             type="button"
             className="tab export"
@@ -363,7 +380,6 @@ export default function Sidebar({
             </button>
           ))}
         </div>
-
         {isEmpty && (
           <p className="empty">
             选中正文里的文字就能收藏单词或笔记；也可以点右上角「＋ 单词」手动记一个，不导入书也能用。

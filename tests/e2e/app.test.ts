@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { _electron as electron } from 'playwright-core'
 import type { ElectronApplication, Page } from 'playwright-core'
 import { parseCsvRecords } from '../../src/core/csv'
+import { DEFAULT_DAILY_NEW } from '../../src/core/review'
 
 const require = createRequire(import.meta.url)
 const electronPath = require('electron') as unknown as string
@@ -2068,5 +2069,140 @@ describe('跳转后能回到原处', () => {
     await page.waitForSelector('.reader')
     await expect.poll(async () => page.locator('.reader-header h1').textContent()).toBe(BOOK)
     expect(await topSegment()).toBe(origin)
+  })
+})
+
+/**
+ * 复习。放在最后：它会把词表里所有词都评一遍分，改变复习状态。
+ *
+ * 这一轮做的是**调度 + 最简面板**（一次一个词）。卡片模式的花活
+ * （翻面动画、跳回原文、统计）留给下一轮。
+ */
+describe('复习', () => {
+  const entry = () => page.locator('.review-entry')
+
+  /** 侧栏那个按钮上的数字 */
+  const entryCount = async (): Promise<number> => {
+    const text = (await entry().textContent()) ?? ''
+    return Number(text.replace(/[^\d]/g, '')) || 0
+  }
+
+  const vocabGroupCount = (): Promise<number> => page.locator('.vocab-group').count()
+
+  const startReview = async (): Promise<void> => {
+    await entry().click()
+    await page.waitForSelector('.review-panel')
+  }
+
+  const progressText = async (): Promise<string> =>
+    (await page.locator('.review-progress').textContent()) ?? ''
+
+  const reveal = async (): Promise<void> => {
+    await page.locator('.review-reveal').click()
+    await expect.poll(async () => page.locator('.review-definition').count()).toBe(1)
+  }
+
+  it('侧栏显示待复习的词数，且等于词表里的词数（都还没复习过）', async () => {
+    // 复习看的是整个词表，先把范围和筛选都放开
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+    await page.getByRole('button', { name: '不限', exact: true }).click()
+
+    const total = await vocabGroupCount()
+    expect(total).toBeGreaterThan(0)
+    await expect.poll(entryCount).toBe(total)
+  })
+
+  it('面板：先遮住释义，没显示释义之前不能评分（不然就只是「标记一下」）', async () => {
+    await startReview()
+
+    expect(await page.locator('.review-word').count()).toBe(1)
+    expect(await page.locator('.review-definition').count()).toBe(0)
+    expect(await page.locator('.grade').first().isDisabled()).toBe(true)
+    expect(await progressText()).toBe(`1 / ${await vocabGroupCount()}`)
+  })
+
+  it('显示释义后能看到原句 —— 这是别的背单词软件给不了的一行', async () => {
+    await reveal()
+    // 词表里既有从书里收的词（有原句），也可能有手动记的
+    const contexts = await page.locator('.review-context').count()
+    const contextsOrManual = contexts + (await page.locator('.review-context.manual').count())
+    expect(contextsOrManual).toBeGreaterThan(0)
+    expect(await page.locator('.grade').first().isDisabled()).toBe(false)
+  })
+
+  it('键盘也能过一轮：空格翻面，1/2/3 评分', async () => {
+    await page.keyboard.press('3')
+    await expect.poll(progressText).toBe(`2 / ${await vocabGroupCount()}`)
+
+    // 下一张卡又是遮住的状态
+    expect(await page.locator('.review-definition').count()).toBe(0)
+    await page.keyboard.press(' ')
+    await expect.poll(async () => page.locator('.review-definition').count()).toBe(1)
+
+    await page.keyboard.press('1')
+    await expect.poll(progressText).toBe(`3 / ${await vocabGroupCount()}`)
+  })
+
+  it('把剩下的评完，面板显示「过完了」', async () => {
+    const total = await vocabGroupCount()
+    // 已经评掉两个了
+    for (let done = 2; done < total; done++) {
+      await reveal()
+      await page.locator('.grade.remembered').click()
+    }
+    await expect.poll(async () => page.locator('.review-done').count()).toBe(1)
+  })
+
+  it('评完就不再待复习（到期的都推到了以后）', async () => {
+    await page.locator('.review-close').click()
+    await expect.poll(entryCount).toBe(0)
+    expect(await entry().isDisabled()).toBe(true)
+  })
+
+  it('★ 复习进度写进存档：关掉重开也还记得，不会又变成「全是新词」', async () => {
+    await app.close()
+
+    const persisted = JSON.parse(await readFile(join(userDataDir, 'inkpick-store.json'), 'utf-8')) as {
+      review: Record<string, { interval: number; reps: number; firstAt: number; due: number }>
+    }
+    const keys = Object.keys(persisted.review)
+    expect(keys.length).toBeGreaterThan(0)
+    // 刚评完的词都排到了以后，而不是立刻又到期
+    for (const key of keys) {
+      expect(persisted.review[key].due).toBeGreaterThan(Date.now())
+      expect(persisted.review[key].firstAt).toBeLessThanOrEqual(Date.now())
+    }
+
+    await launch()
+    await page.waitForSelector('.app')
+    // 重开后依然没有待复习的（今天已经复习完了）
+    await expect.poll(entryCount).toBe(0)
+  })
+
+  it('★ 每天引进的新词有上限，不会一口气全堆进队列', async () => {
+    // 上一个用例重启过应用，范围回到默认的「本文件」，
+    // 而手动词不属于任何书 —— 不切到「全部」就看不到它们
+    await page.getByRole('button', { name: '全部', exact: true }).click()
+
+    // 上面已经把整个词表评了一遍，等于「今天已经引入了 N 个新词」。
+    // 现在词表里有几个词，就是今天引进了几个。
+    const reviewedToday = await vocabGroupCount()
+    expect(reviewedToday).toBeGreaterThan(0)
+
+    // 一口气加超过上限那么多个新词
+    const added = DEFAULT_DAILY_NEW + 2
+    for (let i = 1; i <= added; i++) {
+      if ((await page.locator('.add-word-input').count()) === 0) {
+        await page.getByRole('button', { name: '手动添加单词' }).click()
+      }
+      await page.locator('.add-word-input').fill(`bulkword${i}`)
+      await page.locator('.add-word-input').press('Enter')
+    }
+    await expect.poll(vocabGroupCount).toBe(reviewedToday + added)
+
+    // 但今天的名额已经用掉一部分了，超出的要等明天
+    const expected = Math.max(0, DEFAULT_DAILY_NEW - reviewedToday)
+    await expect.poll(entryCount).toBe(expected)
+    expect(await page.locator('.review-entry').getAttribute('title')).toContain('待复习')
   })
 })

@@ -12,12 +12,14 @@ import {
   vocabToAnkiCsv
 } from '@core/export'
 import { DEFAULT_SIDEBAR_WIDTH, clampSidebarWidth } from '@core/prefs'
+import { buildReviewQueue, queueSize } from '@core/review'
 import { indexOfAnnotation } from '@core/store'
 import { splitParagraphs } from '@core/text'
 import { groupVocab } from '@core/vocab'
 import type { Annotation, Doc } from '@core/types'
 import Reader from '@renderer/components/Reader'
 import type { JumpTarget } from '@renderer/components/Reader'
+import ReviewPanel from '@renderer/components/ReviewPanel'
 import Sidebar from '@renderer/components/Sidebar'
 import SidebarToggle from '@renderer/components/SidebarToggle'
 import { flushSave, useAppStore } from '@renderer/state'
@@ -49,6 +51,7 @@ export default function App(): JSX.Element {
   const setManualDefinition = useAppStore((state) => state.setManualDefinition)
   const saveProgress = useAppStore((state) => state.saveProgress)
   const updatePrefs = useAppStore((state) => state.updatePrefs)
+  const gradeReview = useAppStore((state) => state.gradeReview)
   const prefs = store.prefs
 
   // 主题挂在 documentElement 上，整个应用（含侧栏）一起换
@@ -141,6 +144,33 @@ export default function App(): JSX.Element {
    */
   const segments = useMemo(() => (doc ? splitParagraphs(doc.content) : []), [doc])
   const chapters = useMemo(() => detectChapters(segments, doc?.content.length ?? 0), [segments, doc])
+
+  /**
+   * 复习看的是**整个词表**，不是当前这本书。
+   * 词是从哪本书收来的跟「该不该复习」无关。
+   */
+  const allVocabGroups = useMemo(() => groupVocab(store.annotations), [store.annotations])
+  const groupsByKey = useMemo(
+    () => new Map(allVocabGroups.map((item) => [item.key, item])),
+    [allVocabGroups]
+  )
+  const reviewQueue = useMemo(
+    () => buildReviewQueue(allVocabGroups.map((item) => item.key), store.review, { now: Date.now() }),
+    [allVocabGroups, store.review]
+  )
+  const reviewCount = queueSize(reviewQueue)
+
+  const [reviewOpen, setReviewOpen] = useState(false)
+  /**
+   * 开一轮复习时把队列**快照**下来。
+   *不快照的话，每评一次分 store 就变了、队列重算，面板上的下标会错位到别的词。
+   */
+  const [activeQueue, setActiveQueue] = useState<string[]>([])
+
+  const startReview = useCallback((): void => {
+    setActiveQueue([...reviewQueue.due, ...reviewQueue.fresh])
+    setReviewOpen(true)
+  }, [reviewQueue])
 
   /** 当前读到第几章。由 Reader 上报（它才知道视口顶部在哪），侧栏目录靠它高亮 */
   const [chapterIndex, setChapterIndex] = useState(-1)
@@ -405,6 +435,8 @@ export default function App(): JSX.Element {
               onDeleteDoc={(doc) => void handleDeleteDoc(doc)}
               onJump={handleJump}
               onJumpChapter={handleJumpChapter}
+              onStartReview={startReview}
+              reviewCount={reviewCount}
               onRemove={handleRemoveAnnotation}
               onSetDefinition={setManualDefinition}
               onEditNote={updateNote}
@@ -474,6 +506,15 @@ export default function App(): JSX.Element {
           </main>
         )}
       </div>
+
+      {reviewOpen && (
+        <ReviewPanel
+          queue={activeQueue}
+          groups={groupsByKey}
+          onGrade={gradeReview}
+          onClose={() => setReviewOpen(false)}
+        />
+      )}
 
       {toast && (
         <div className="toast">

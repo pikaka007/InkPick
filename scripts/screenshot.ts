@@ -182,6 +182,18 @@ await page.locator('.add-word-input').fill('habitual')
 await page.waitForTimeout(200)
 await shoot('manual-word')
 
+// 复习面板：遮着释义的样子（先自己回想），以及翻开后的样子
+await page.getByRole('button', { name: '全部', exact: true }).click()
+await page.locator('.review-entry').click()
+await page.waitForSelector('.review-panel')
+await page.waitForTimeout(150)
+await shoot('review-card')
+
+await page.locator('.review-reveal').click()
+await page.waitForTimeout(150)
+await shoot('review-revealed')
+await page.locator('.review-close').click()
+
 await app.close()
 await rm(userDataDir, { recursive: true, force: true })
 console.log(`\n完成，产物在 ${OUT_DIR}`)

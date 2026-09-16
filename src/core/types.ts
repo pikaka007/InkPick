@@ -79,4 +79,31 @@ export interface Store {
   lastDocId?: string
   /** 阅读偏好。旧数据里没这个字段，反序列化时会补默认值 */
   prefs: ReaderPrefs
+  /**
+   * 复习进度。**按词的 key（lemma）存，不按标注** ——
+   * 同一个词在多本书里收过只该复习一次，按标注存会变成复习好几遍。
+   * 旧数据里没这个字段，反序列化时补空对象。
+   */
+  review: Record<string, ReviewState>
+}
+
+/**
+ * 一个词的复习状态。
+ * 字段含义与算法见 core/review.ts —— 这里只是数据形状。
+ */
+export interface ReviewState {
+  /** 下次到期时间（毫秒时间戳），<= 现在就是该复习了 */
+  due: number
+  /** 当前间隔（天）。0 表示刚忘过、今天还要再来 */
+  interval: number
+  /** 难度系数，越大说明这个词对你越容易 */
+  ease: number
+  /** 连续记住的次数。忘了会归零 */
+  reps: number
+  /** 忘了几次 */
+  lapses: number
+  /** 第一次复习的时间。「今天引入了几个新词」靠它算 */
+  firstAt: number
+  /** 最后一次复习时间 */
+  reviewedAt: number
 }

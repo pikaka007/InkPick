@@ -2,7 +2,7 @@
  * Store —— 纯状态操作。不碰文件系统、不碰 DOM，方便单测。
  * 持久化由 shell 负责（当前实现：main 进程写单个 JSON 文件，见 src/main/storeFile.ts）。
  */
-import type { Anchor, Annotation, AnnotationType, Doc, LookupStatus, Store } from './types'
+import type { Anchor, Annotation, AnnotationType, Doc, LookupStatus, ReviewState, Store } from './types'
 import { clamp } from './text'
 import { DEFAULT_PREFS, normalizePrefs } from './prefs'
 import type { ReaderPrefs } from './prefs'
@@ -10,7 +10,14 @@ import type { ReaderPrefs } from './prefs'
 export const STORE_VERSION = 1
 
 export function createEmptyStore(): Store {
-  return { version: STORE_VERSION, docs: [], annotations: [], progress: {}, prefs: { ...DEFAULT_PREFS } }
+  return {
+    version: STORE_VERSION,
+    docs: [],
+    annotations: [],
+    progress: {},
+    prefs: { ...DEFAULT_PREFS },
+    review: {}
+  }
 }
 
 export function createId(): string {
@@ -185,6 +192,11 @@ export function setPrefs(store: Store, patch: Partial<ReaderPrefs>): Store {
   return { ...store, prefs: normalizePrefs({ ...store.prefs, ...patch }) }
 }
 
+/** 记下一个词的复习状态（按分组的 key） */
+export function setReview(store: Store, key: string, state: ReviewState): Store {
+  return { ...store, review: { ...store.review, [key]: state } }
+}
+
 export function serializeStore(store: Store): string {
   return JSON.stringify(store)
 }
@@ -213,8 +225,36 @@ export function deserializeStore(raw: string | null | undefined): Store {
     progress: candidate.progress && typeof candidate.progress === 'object' ? candidate.progress : {},
     lastDocId: typeof candidate.lastDocId === 'string' ? candidate.lastDocId : undefined,
     // 旧版本文件没有 prefs，normalizePrefs 会补全并夹到合法档位
-    prefs: normalizePrefs(candidate.prefs)
+    prefs: normalizePrefs(candidate.prefs),
+    // 旧版本没有复习进度；坏掉的单条丢掉，不影响别的
+    review: normalizeReviewMap(candidate.review)
   }
+}
+
+/** 复习状态：字段缺一个就当成不存在（宁可从新词重新开始，也不要一个半残的到期时间） */
+function normalizeReviewMap(value: unknown): Record<string, ReviewState> {
+  if (!value || typeof value !== 'object') return {}
+  const result: Record<string, ReviewState> = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (isReviewState(entry)) result[key] = entry
+  }
+  return result
+}
+
+function isReviewState(value: unknown): value is ReviewState {
+  const state = value as Partial<ReviewState> | null
+  // 每个数字字段都要有：缺 lapses 会让 state.lapses + 1 算出 NaN，
+  // NaN 存进 JSON 会变成 null，下次读又被丢掉 —— 不如一开始就不收
+  return (
+    !!state &&
+    typeof state.due === 'number' &&
+    typeof state.interval === 'number' &&
+    typeof state.ease === 'number' &&
+    typeof state.reps === 'number' &&
+    typeof state.lapses === 'number' &&
+    typeof state.firstAt === 'number' &&
+    typeof state.reviewedAt === 'number'
+  )
 }
 
 function isDoc(value: unknown): value is Doc {
